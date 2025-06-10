@@ -1,0 +1,17 @@
+#torch
+#torchaudio
+numpy
+librosa
+omegaconf
+tqdm
+kaldiio
+matplotlib
+plotly
+psutil
+gradio
+streamlit
+pyside6
+modelscope
+funasr
+faster-whisper
+hf_xet
