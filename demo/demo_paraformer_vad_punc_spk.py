@@ -11,7 +11,7 @@ with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
     model = AutoModel(
         model=PARAFORMER_MODEL,
         vad_model=VAD_MODEL,
-        vad_kwargs={"max_single_segment_time": 60000},
+        vad_kwargs={"max_single_segment_time": 30000},
         punc_model=PUNC_MODEL,
         spk_model=SPK_MODEL,
         disable_update=True,
