@@ -1,4 +1,4 @@
 torch
 torchaudio
-funasr
+funasr==1.2.6
 gradio
