@@ -190,6 +190,8 @@ class FunASRProcessor:
         """初始化FunASR模型"""
         try:
             from funasr import AutoModel
+            from contextlib import redirect_stderr, redirect_stdout
+            from io import StringIO
             
             if self.language == "ZH":
                 # 中文使用 Paraformer 组合（ASR + VAD + PUNC + SPK）
@@ -198,17 +200,26 @@ class FunASRProcessor:
                 punc_model = _ensure_exists(PUNC_MODEL_DIR, "PUNC(CT)")
                 spk_model = _ensure_exists(SPK_MODEL_DIR, "SPK(CampPlus)")
 
-                model_kwargs = {
-                    "model": asr_model,
-                    "vad_model": vad_model,
-                    "punc_model": punc_model,
-                    "spk_model": spk_model,
-                }
-                self.model = AutoModel(**model_kwargs)
+                with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
+                    self.model = AutoModel(
+                        model=asr_model,
+                        vad_model=vad_model,
+                        vad_kwargs={"max_single_segment_time": 30000},
+                        punc_model=punc_model,
+                        spk_model=spk_model,
+                        disable_update=True,
+                    )
             else:
-                # 非中文默认采用 SenseVoice
+                # 非中文使用 SenseVoice + VAD 组合
                 sensevoice_model = _ensure_exists(ASR_SENSEVOICE_DIR, "ASR(SenseVoice)")
-                self.model = AutoModel(model=sensevoice_model)
+                vad_model = _ensure_exists(VAD_MODEL_DIR, "VAD(FSMN)")
+                
+                with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
+                    self.model = AutoModel(
+                        model=sensevoice_model,
+                        vad_model=vad_model,
+                        vad_kwargs={"max_single_segment_time": 30000},
+                    )
                 
             print(f"FunASR模型初始化成功 (语言: {self.language})")
             
@@ -223,8 +234,31 @@ class FunASRProcessor:
     def transcribe(self, audio_path: str) -> List[Dict]:
         """转录音频文件"""
         try:
+            from contextlib import redirect_stderr, redirect_stdout
+            from io import StringIO
+            import re
+            
             # 使用FunASR进行转录
-            result = self.model.generate(input=audio_path)
+            if self.language == "ZH":
+                # 中文模型（Paraformer）
+                with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
+                    result = self.model.generate(input=audio_path, cache={})
+            else:
+                # 非中文模型（SenseVoice）
+                generate_kwargs = {
+                    "language": "auto",  # "zh", "en", "yue", "ja", "ko", "nospeech"
+                    "use_itn": True,
+                    "batch_size_s": 60,
+                    "merge_vad": True,  
+                    "merge_length_s": 15,
+                }
+                with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
+                    result = self.model.generate(
+                        input=audio_path,
+                        cache={},
+                        **generate_kwargs,
+                        output_timestamp=True,
+                    )
             
             # 解析结果
             segments = []
@@ -240,19 +274,40 @@ class FunASRProcessor:
                             'end': sentence['end'] / 1000.0,
                             'text': sentence['text']
                         })
-                elif 'text' in res:
-                    # SenseVoice等模型输出格式
+                elif 'text' in res and 'timestamp' in res:
+                    # SenseVoice模型输出格式
                     text = res['text']
+                    timestamps = res['timestamp']
+                    
+                    # 清理SenseVoice特殊标记
+                    text = self._clean_sensevoice_text(text)
+                    
+                    if text.strip() and timestamps:
+                        # 使用SenseVoice的时间戳信息
+                        start_time = timestamps[0][0] / 1000.0 if timestamps else 0.0
+                        end_time = timestamps[-1][1] / 1000.0 if timestamps else self._get_audio_duration(audio_path)
+                        
+                        segments.append({
+                            'start': start_time,
+                            'end': end_time,
+                            'text': text
+                        })
+                elif 'text' in res:
+                    # 兜底：只有文本没有时间戳
+                    text = res['text']
+                    text = self._clean_sensevoice_text(text)
+                    
                     if text.strip():
-                        # 简单时间戳分配（如果没有详细时间戳）
                         segments.append({
                             'start': 0.0,
                             'end': self._get_audio_duration(audio_path),
                             'text': text
                         })
                 else:
-                    # 兜底处理
+                    # 最后兜底处理
                     text_content = str(res) if res else ""
+                    text_content = self._clean_sensevoice_text(text_content)
+                    
                     if text_content.strip():
                         segments.append({
                             'start': 0.0,
@@ -265,6 +320,16 @@ class FunASRProcessor:
         except Exception as e:
             print(f"转录失败 {audio_path}: {e}")
             return []
+    
+    def _clean_sensevoice_text(self, text: str) -> str:
+        """清理SenseVoice输出中的特殊标记"""
+        if not text:
+            return ""
+        
+        import re
+        # 移除SenseVoice特殊标记：<|zh|><|NEUTRAL|><|Speech|><|withitn|>等
+        cleaned_text = re.sub(r'<\|[^|]*\|>', '', text)
+        return cleaned_text.strip()
     
     def _get_audio_duration(self, audio_path: str) -> float:
         """获取音频时长"""
