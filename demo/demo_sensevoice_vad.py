@@ -17,7 +17,7 @@ en_input = f"{model_dir}/example/en.mp3"
 # zh
 zh_input = f"{model_dir}/example/zh.mp3"
 
-input_wav = "/Users/boom/Music/乐飞航空/manual/data/ytc/manual171_0113.wav"
+input_wav = "demo/examples/manual171_0113.wav"
 
 input_dic = {
     "en": en_input,

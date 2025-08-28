@@ -19,7 +19,7 @@ with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
 
 with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
     res = model.generate(
-        input = "/Users/boom/Music/乐飞航空/manual/data/ytc/manual171_0113.wav",
+        input = "demo/examples/manual171_0113.wav",
         cache={},
     )
 
