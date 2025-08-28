@@ -356,7 +356,7 @@ def subfix_startwebui(args):
                     minimum=0, maximum=g_max_json_index, value=g_index, step=1, label=g_language("Index"), scale=3
             )
             splitpoint_slider = gr.Slider(
-                    minimum=0, maximum=120.0, value=0, step=0.1, label=g_language("Audio Split Point(s)"), scale=3
+                    minimum=0, maximum=20.0, value=0, step=0.1, label=g_language("Audio Split Point(s)"), scale=3
             )
             btn_audio_split = gr.Button(g_language("Split Audio"), scale=1)
             btn_save_json = gr.Button(g_language("Save File"), visible=True, scale=1)
