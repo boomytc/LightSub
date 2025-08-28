@@ -42,3 +42,11 @@ for input_wav in input_dic.values():
         )
     print(res)
     print(res[0]["text"])
+
+# 输出内容如下
+'''
+[{'key': 'en', 'text': '<|en|><|NEUTRAL|><|Speech|><|withitn|>The tribal chieftain called for the boy and presented him with 50 pieces of gold.', 'timestamp': [[800, 1250], [1250, 1730], [1730, 2390], [2390, 2690], [2690, 2870], [2870, 3050], [3050, 3290], [3290, 3890], [3890, 4310], [4310, 4670], [4670, 4850], [5090, 5210], [5210, 5450], [5450, 5570], [5570, 5990], [5990, 6290], [6290, 7130]]}]
+<|en|><|NEUTRAL|><|Speech|><|withitn|>The tribal chieftain called for the boy and presented him with 50 pieces of gold.
+[{'key': 'manual171_0113', 'text': '<|zh|><|NEUTRAL|><|Speech|><|withitn|>增速阶段的注意力分配以外为主，余光兼顾座舱。', 'timestamp': [[290, 680], [680, 920], [920, 1100], [1100, 1220], [1220, 1400], [1400, 1520], [1520, 1700], [1700, 1880], [1880, 2060], [2060, 2240], [2240, 2540], [2540, 2720], [2720, 2900], [2900, 3080], [3080, 3320], [3320, 3440], [3440, 3620], [3620, 3800], [3800, 3980], [3980, 4160], [4160, 4280], [4280, 4640]]}]
+<|zh|><|NEUTRAL|><|Speech|><|withitn|>增速阶段的注意力分配以外为主，余光兼顾座舱。
+'''

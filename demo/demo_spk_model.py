@@ -84,3 +84,24 @@ if result['embeddings'][0] is not None:
 if result['embeddings'][1] is not None:
     print(f"Speaker 2 embedding shape: {result['embeddings'][1].shape}")
 print()
+
+# 输入内容如下
+'''
+=== 相同说话人语音 ===
+相似度得分: 0.6936
+判断结果: same
+
+=== 不同说话人语音 ===
+相似度得分: -0.0842
+判断结果: different
+
+=== 自定义阈值 (0.31) ===
+相似度得分: -0.0842
+判断结果: different
+
+=== 输出embedding信息 ===
+相似度得分: -0.0842
+判断结果: different
+Speaker 1 embedding shape: torch.Size([1, 192])
+Speaker 2 embedding shape: torch.Size([1, 192])
+'''
