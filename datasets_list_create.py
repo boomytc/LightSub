@@ -8,6 +8,16 @@ from typing import List, Dict, Optional, Tuple, Any
 
 """
 使用FunASR创建语音训练数据集
+
+数据格式说明：
+输出格式：音频路径|文本内容
+示例：/path/to/audio_000001.wav|这是识别出的文本内容
+
+设计理念：
+- 消除冗余的音频ID字段（可从路径实时提取：os.path.splitext(os.path.basename(path))[0]）
+- 移除重复的语言字段（通过--language参数统一指定）
+- 专注核心功能：音频-文本映射关系
+- 简化处理流程，减少存储空间
 """
 
 # I/O 路径默认值
@@ -254,7 +264,7 @@ class FunASRProcessor:
             return 10.0  # 默认10秒
     
     def __call__(self, audio_in: str) -> List[Dict]:
-        """兼容原始接口"""
+        """调用接口"""
         return self.transcribe(audio_in)
 
 def init_asr_model(language: str):
@@ -383,8 +393,8 @@ def pre_vad_split_and_recognize(
                 text = _segments_to_text(segs)
 
                 out_path = os.path.abspath(sliced_audio_path) if absolute_path else sliced_audio_path
-                audio_id = os.path.splitext(os.path.basename(out_path))[0]
-                results.append(f"{out_path}|{audio_id}|{language}|{text}")
+                # 简化格式：仅保留核心的音频路径和文本内容
+                results.append(f"{out_path}|{text}")
                 count += 1
         except Exception as e:
             print(f"处理错误 {audio_path}: {e}")
