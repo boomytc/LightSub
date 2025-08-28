@@ -8,13 +8,15 @@ with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
         disable_update=True
     )
 
-text = '我们都是木头人不会讲话不会动'
+# text = '我们都是木头人不会讲话不会动'
+text = '增 速 阶 段 的 注 意 力 分 配 以 外 为 主 余 光 兼 顾 座 舱'
 
 with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
     result = model.generate(input=text)
 
 print(f"输入文本: {text}")
 print(f"预测结果: {result}")
+print(f"处理后的文本: {result[0]['text']}")
 
 # 如果想处理文件中的文本
 # with open('example/punc_example.txt', 'r', encoding='utf-8') as f:
