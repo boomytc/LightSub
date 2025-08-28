@@ -9,24 +9,6 @@ import gradio as gr
 import numpy as np
 import soundfile
 
-
-"""
-Apache License
-Version 2.0, January 2004
-https://www.apache.org/licenses/LICENSE-2.0
-
-SubFix
-cronrpc
-https://github.com/cronrpc/SubFix
-
-适配说明：
-本WebUI工具适配 datasets_list_create.py 的简化输出格式
-- 数据格式：音频路径|文本内容
-- 设计理念：专注核心音频-文本编辑功能
-"""
-
-# SubFix - 一个用于音频文件和文本编辑的WebUI工具，已适配FunASR数据集格式
-
 # 全局变量区域  
 g_load_file = "" # 要加载的文件路径
 
@@ -364,7 +346,6 @@ def subfix_startwebui(args):
 
         with gr.Row():
             btn_change_index = gr.Button(g_language("Change Index"))
-            btn_submit_change = gr.Button(g_language("Submit Text"))
             btn_merge_audio = gr.Button(g_language("Merge Audio"))
             btn_delete_audio = gr.Button(g_language("Delete Audio"))
             btn_previous_index = gr.Button(g_language("Previous Index"))
@@ -431,19 +412,6 @@ def subfix_startwebui(args):
         )
 
         
-        btn_submit_change.click(
-            b_submit_change,
-            inputs=[
-                *g_text_list,
-            ],
-            outputs=[
-                index_slider,
-                *g_text_list,
-                *g_audio_list,
-                *g_checkbox_list
-            ],
-        )
-
         btn_previous_index.click(
             b_previous_index,
             inputs=[
