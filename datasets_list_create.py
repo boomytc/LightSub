@@ -1,13 +1,10 @@
 import os
 import argparse
 import subprocess
-import librosa
-import soundfile
-import numpy as np
 import re
 import shutil
 from tqdm import tqdm
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple, Any
 
 """
 使用FunASR创建语音训练数据集
@@ -25,6 +22,10 @@ DEFAULT_LANGUAGE: str = "ZH"
 DEFAULT_MAX_SECONDS: int = 10
 DEFAULT_USE_ABSOLUTE_PATH: bool = True
 DEFAULT_KEEP_CACHE: bool = False
+
+# 分段/合并默认参数
+DEFAULT_MERGE_SILENCE_MS: int = 300   # 合并相邻VAD段时允许的最大静音间隔(ms)
+DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS: int = 30000  # VAD单段最大时长(ms)
 
 # 外部依赖
 FFMPEG_BIN: str = "ffmpeg"
@@ -75,107 +76,16 @@ def convert_files(source_dir: str, target_dir: str, sample_rate: int):
     
     return converted_files
 
-def ends_with_ending_sentence(sentence: str) -> bool:
-    """检查句子是否以结束标点符号结尾"""
-    return bool(re.search(r'[。？！…]$', sentence))
-
-
-def merge_audio_slice(source_audio: str, slice_dir: str, data_list: List[Dict], 
-                     start_count: int, sample_rate: int, max_seconds: int, 
-                     language: str, audio_name: str) -> tuple:
-    """合并音频切片并生成训练数据"""
-    sentence_list = []
-    audio_list = []
-    time_length = 0
-    count = start_count
-    result = []
-
-    data, sample_rate = librosa.load(source_audio, sr=sample_rate, mono=True)
-    
-    for sentence in data_list:
-        text = sentence['text'].strip()
-        if text == "":
-            continue
-            
-        start = int(sentence['start'] * sample_rate)
-        end = int(sentence['end'] * sample_rate)
-
-        # 如果当前累积时长超过最大限制，保存当前片段
-        if time_length > 0 and time_length + (sentence['end'] - sentence['start']) > max_seconds:
-            sliced_audio_name = f"{audio_name}_{str(count).zfill(6)}"
-            sliced_audio_path = os.path.join(slice_dir, sliced_audio_name + ".wav")
-            s_sentence = "".join(sentence_list)
-
-            # 中文标点符号处理
-            if language == "ZH" and re.search(r"[，]$", s_sentence):
-                s_sentence = s_sentence[:-1] + '。'
-
-            audio_concat = np.concatenate(audio_list)
-            if time_length > max_seconds:
-                print(f"[音频过长]: {sliced_audio_path}, 时长: {time_length:.2f}秒")
-            
-            soundfile.write(sliced_audio_path, audio_concat, sample_rate)
-            result.append({
-                'sliced_audio_path': sliced_audio_path,
-                'language': language,
-                'text': s_sentence
-            })
-            
-            sentence_list = []
-            audio_list = []
-            time_length = 0
-            count += 1
-
-        sentence_list.append(text)
-        audio_list.append(data[start:end])
-        time_length += (sentence['end'] - sentence['start'])
-        
-        # 如果遇到句子结束标点，分割保存
-        if ends_with_ending_sentence(text):
-            sliced_audio_name = f"{audio_name}_{str(count).zfill(6)}"
-            sliced_audio_path = os.path.join(slice_dir, sliced_audio_name + ".wav")
-            s_sentence = "".join(sentence_list)
-            audio_concat = np.concatenate(audio_list)
-            soundfile.write(sliced_audio_path, audio_concat, sample_rate)
-            
-            result.append({
-                'sliced_audio_path': sliced_audio_path,
-                'language': language,
-                'text': s_sentence
-            })
-            
-            sentence_list = []
-            audio_list = []
-            time_length = 0
-            count += 1
-    
-    # 处理剩余的音频片段
-    if sentence_list and audio_list:
-        sliced_audio_name = f"{audio_name}_{str(count).zfill(6)}"
-        sliced_audio_path = os.path.join(slice_dir, sliced_audio_name + ".wav")
-        s_sentence = "".join(sentence_list)
-        
-        if language == "ZH" and re.search(r"[，]$", s_sentence):
-            s_sentence = s_sentence[:-1] + '。'
-            
-        audio_concat = np.concatenate(audio_list)
-        soundfile.write(sliced_audio_path, audio_concat, sample_rate)
-        
-        result.append({
-            'sliced_audio_path': sliced_audio_path,
-            'language': language,
-            'text': s_sentence
-        })
-        count += 1
-
-    return result, count
+## 旧的基于ASR内部VAD的合并切段逻辑已移除（统一改为先VAD切片到磁盘，再ASR识别）
 
 class FunASRProcessor:
     """FunASR处理器 - 使用本地固定目录加载模型"""
     
-    def __init__(self, language: str = "ZH"):
+    def __init__(self, language: str = "ZH", use_internal_vad: bool = True, vad_max_single_segment_ms: int = DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS):
         self.language = language
         self.model = None
+        self.use_internal_vad = use_internal_vad
+        self.vad_max_single_segment_ms = vad_max_single_segment_ms
         self.init_model()
     
     def init_model(self):
@@ -188,32 +98,44 @@ class FunASRProcessor:
             if self.language == "ZH":
                 # 中文使用 Paraformer 组合（ASR + VAD + PUNC + SPK）
                 asr_model = _ensure_exists(ASR_PARAFORMER_DIR, "ASR(Paraformer)")
-                vad_model = _ensure_exists(VAD_MODEL_DIR, "VAD(FSMN)")
                 punc_model = _ensure_exists(PUNC_MODEL_DIR, "PUNC(CT)")
                 spk_model = _ensure_exists(SPK_MODEL_DIR, "SPK(CampPlus)")
-
                 with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
-                    self.model = AutoModel(
-                        model=asr_model,
-                        vad_model=vad_model,
-                        vad_kwargs={"max_single_segment_time": 30000},
-                        punc_model=punc_model,
-                        spk_model=spk_model,
-                        disable_update=True,
-                    )
+                    if self.use_internal_vad:
+                        vad_model = _ensure_exists(VAD_MODEL_DIR, "VAD(FSMN)")
+                        self.model = AutoModel(
+                            model=asr_model,
+                            vad_model=vad_model,
+                            vad_kwargs={"max_single_segment_time": int(self.vad_max_single_segment_ms)},
+                            punc_model=punc_model,
+                            spk_model=spk_model,
+                            disable_update=True,
+                        )
+                    else:
+                        # 仅ASR + PUNC(+SPK)，不启用内部VAD
+                        self.model = AutoModel(
+                            model=asr_model,
+                            punc_model=punc_model,
+                            spk_model=spk_model,
+                            disable_update=True,
+                        )
             else:
                 # 非中文使用 SenseVoice + VAD 组合
                 sensevoice_model = _ensure_exists(ASR_SENSEVOICE_DIR, "ASR(SenseVoice)")
-                vad_model = _ensure_exists(VAD_MODEL_DIR, "VAD(FSMN)")
                 
                 with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
-                    self.model = AutoModel(
-                        model=sensevoice_model,
-                        vad_model=vad_model,
-                        vad_kwargs={"max_single_segment_time": 30000},
-                    )
-                
-            print(f"模型初始化成功 (语言: {self.language})")
+                    if self.use_internal_vad:
+                        vad_model = _ensure_exists(VAD_MODEL_DIR, "VAD(FSMN)")
+                        self.model = AutoModel(
+                            model=sensevoice_model,
+                            vad_model=vad_model,
+                            vad_kwargs={"max_single_segment_time": int(self.vad_max_single_segment_ms)},
+                        )
+                    else:
+                        self.model = AutoModel(
+                            model=sensevoice_model,
+                        )
+            
             
         except ImportError:
             print("错误: 未找到funasr库，请安装: pip install funasr")
@@ -240,7 +162,7 @@ class FunASRProcessor:
                     "language": "auto",  # "zh", "en", "yue", "ja", "ko", "nospeech"
                     "use_itn": True,
                     "batch_size_s": 60,
-                    "merge_vad": True,  
+                    "merge_vad": True,
                     "merge_length_s": 15,
                 }
                 with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
@@ -336,47 +258,142 @@ class FunASRProcessor:
         return self.transcribe(audio_in)
 
 def init_asr_model(language: str):
-    """初始化ASR模型（使用本地固定目录加载）"""
-    return FunASRProcessor(language=language)
+    """初始化ASR模型（启用内部VAD，遵循demo逻辑）"""
+    return FunASRProcessor(language=language, use_internal_vad=True)
 
-def create_dataset(converted_files: List[str], target_dir: str, sample_rate: int, 
-                  language: str, infer_model, max_seconds: int, absolute_path: bool) -> List[str]:
-    """创建数据集"""
-    count = 0
-    result = []
-    
-    os.makedirs(target_dir, exist_ok=True)
-    
-    for audio_path in tqdm(converted_files, desc="处理音频文件"):
-        try:
-            data_list = infer_model(audio_in=audio_path)
-            
-            if not data_list:
-                continue
-            
-            audio_name = os.path.splitext(os.path.basename(audio_path))[0]
-            
-            data, count = merge_audio_slice(
-                audio_path, target_dir, data_list, count, 
-                sample_rate, max_seconds, language, audio_name
+def init_vad_model(vad_max_single_segment_ms: int):
+    """初始化VAD模型（仅分段）"""
+    try:
+        from funasr import AutoModel
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+        vad_model_dir = _ensure_exists(VAD_MODEL_DIR, "VAD(FSMN)")
+        with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
+            model = AutoModel(
+                model=vad_model_dir,
+                max_single_segment_time=int(vad_max_single_segment_ms),
+                disable_update=True,
             )
+        # VAD模型初始化成功
+        return model
+    except Exception as e:
+        print(f"VAD模型初始化失败: {e}")
+        raise
 
-            for item_audio in data:
-                if absolute_path:
-                    sliced_audio_path = os.path.abspath(item_audio['sliced_audio_path'])
-                else:
-                    sliced_audio_path = item_audio['sliced_audio_path']
-                
-                language = item_audio['language']
-                text = item_audio['text']
-                audio_id = os.path.splitext(os.path.basename(sliced_audio_path))[0]
-                result.append(f"{sliced_audio_path}|{audio_id}|{language}|{text}")
-                
+def run_vad_segments(vad_model: Any, audio_path: str) -> List[Tuple[int, int]]:
+    """运行VAD，返回毫秒级(start_ms, end_ms)列表"""
+    from contextlib import redirect_stderr, redirect_stdout
+    from io import StringIO
+    try:
+        with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
+            res = vad_model.generate(input=audio_path)
+        if isinstance(res, list) and len(res) > 0 and isinstance(res[0], dict):
+            values = res[0].get('value', [])
+            segs: List[Tuple[int, int]] = []
+            for v in values:
+                if isinstance(v, (list, tuple)) and len(v) == 2:
+                    segs.append((int(v[0]), int(v[1])))
+            return segs
+    except Exception as e:
+        print(f"VAD分段失败 {audio_path}: {e}")
+    return []
+
+def merge_vad_segments(segments_ms: List[Tuple[int, int]], merge_silence_ms: int, segment_max_ms: int) -> List[Tuple[int, int]]:
+    """合并VAD段：允许小静音拼接，并限制最终段最大时长"""
+    if not segments_ms:
+        return []
+    segments = sorted(segments_ms, key=lambda x: x[0])
+    merged: List[Tuple[int, int]] = []
+    cur_s, cur_e = segments[0]
+    for s, e in segments[1:]:
+        if s < cur_s:
+            s = cur_s
+        gap = s - cur_e
+        new_len = e - cur_s
+        if gap <= merge_silence_ms and new_len <= segment_max_ms:
+            cur_e = max(cur_e, e)
+        else:
+            merged.append((cur_s, cur_e))
+            cur_s, cur_e = s, e
+    merged.append((cur_s, cur_e))
+    return merged
+
+def ffmpeg_extract_segment(source_file: str, target_file: str, start_ms: int, end_ms: int, sample_rate: int) -> bool:
+    """使用ffmpeg按起止毫秒切片，输出目标采样率单声道wav"""
+    os.makedirs(os.path.dirname(target_file), exist_ok=True)
+    duration_s = max(0.0, (end_ms - start_ms) / 1000.0)
+    start_s = max(0.0, start_ms / 1000.0)
+    cmd = [
+        FFMPEG_BIN, "-y",
+        "-ss", f"{start_s}",
+        "-t", f"{duration_s}",
+        "-i", source_file,
+        "-ar", f"{sample_rate}",
+        "-ac", "1",
+        "-v", "quiet",
+        target_file,
+    ]
+    try:
+        subprocess.run(cmd, check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"切片失败 {source_file} [{start_ms},{end_ms}]ms: {e}")
+        return False
+
+def _segments_to_text(segments: List[Dict]) -> str:
+    """将转录分段合并为单条文本"""
+    parts: List[str] = []
+    for seg in segments or []:
+        t = str(seg.get('text', '')).strip()
+        if t:
+            parts.append(t)
+    return "".join(parts).strip()
+
+def pre_vad_split_and_recognize(
+    converted_files: List[str], target_dir: str, sample_rate: int,
+    language: str, asr_model: FunASRProcessor, vad_model: Any,
+    max_seconds: int, merge_silence_ms: int, absolute_path: bool
+) -> List[str]:
+    """先VAD切片到磁盘，再逐段ASR识别，返回list.txt行列表"""
+    results: List[str] = []
+    segment_max_ms = int(max_seconds * 1000)
+    for audio_path in tqdm(converted_files, desc="VAD分段与识别"):
+        try:
+            # 1) VAD分段
+            raw_segments = run_vad_segments(vad_model, audio_path)
+            if not raw_segments:
+                continue
+            final_segments = merge_vad_segments(raw_segments, merge_silence_ms, segment_max_ms)
+            if not final_segments:
+                continue
+
+            # 2) 逐段切片到目标目录
+            audio_name = os.path.splitext(os.path.basename(audio_path))[0]
+            count = 0
+            for (s_ms, e_ms) in final_segments:
+                sliced_audio_name = f"{audio_name}_{str(count).zfill(6)}"
+                sliced_audio_path = os.path.join(target_dir, sliced_audio_name + ".wav")
+                ok = ffmpeg_extract_segment(audio_path, sliced_audio_path, s_ms, e_ms, sample_rate)
+                if not ok:
+                    count += 1
+                    continue
+
+                # 3) 识别该切片
+                segs = asr_model(audio_in=sliced_audio_path)
+                text = _segments_to_text(segs)
+
+                out_path = os.path.abspath(sliced_audio_path) if absolute_path else sliced_audio_path
+                audio_id = os.path.splitext(os.path.basename(out_path))[0]
+                results.append(f"{out_path}|{audio_id}|{language}|{text}")
+                count += 1
         except Exception as e:
             print(f"处理错误 {audio_path}: {e}")
             continue
+    return results
 
-    return result
+## 仅VAD切片（不识别）的逻辑已移除；统一在切片后立即进行段级ASR识别生成文本
+
+## 旧的基于ASR内部VAD的create_dataset逻辑已移除
 
 def clean_cache_directory(cache_dir: str):
     """清除缓存目录"""
@@ -388,7 +405,9 @@ def clean_cache_directory(cache_dir: str):
 
 def create_list(source_dir: str, target_dir: str, cache_dir: str, sample_rate: int,
                language: str, output_list: str, max_seconds: int, absolute_path: bool,
-               clean_cache: bool = True):
+               clean_cache: bool = True,
+               merge_silence_ms: int = DEFAULT_MERGE_SILENCE_MS,
+               vad_max_single_segment_ms: int = DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS):
     """创建训练列表文件"""
     
     resample_dir = os.path.join(cache_dir, "funasr_cache", "origin", f"{sample_rate}")
@@ -400,14 +419,16 @@ def create_list(source_dir: str, target_dir: str, cache_dir: str, sample_rate: i
         if not converted_files:
             print("错误: 没有找到可处理的音频文件")
             return
-        
-        print(f"初始化模型 (语言: {language})...")
+        # 固定流程：先VAD分段，再ASR识别
+        print("初始化VAD与ASR模型...")
+        vad_model = init_vad_model(vad_max_single_segment_ms)
         asr_model = init_asr_model(language)
-        
-        print("处理音频并生成数据集...")
-        result = create_dataset(
-            converted_files, target_dir, sample_rate, 
-            language, asr_model, max_seconds, absolute_path
+        os.makedirs(target_dir, exist_ok=True)
+        print("VAD分段->落盘切片->段级识别...")
+        result = pre_vad_split_and_recognize(
+            converted_files, target_dir, sample_rate,
+            language, asr_model, vad_model,
+            max_seconds, merge_silence_ms, absolute_path
         )
         
         print("保存结果...")
@@ -442,11 +463,15 @@ def main():
     parser.add_argument("--language", type=str, default=DEFAULT_LANGUAGE,
                        help=f"语言代码，默认: {DEFAULT_LANGUAGE}")
     parser.add_argument("--max_seconds", type=int, default=DEFAULT_MAX_SECONDS,
-                       help=f"最大音频片段长度(秒)，默认: {DEFAULT_MAX_SECONDS}")
+                       help=f"最大输出片段长度(秒)，默认: {DEFAULT_MAX_SECONDS}")
     parser.add_argument("--relative_path", action="store_true",
                        help="使用相对路径")
     parser.add_argument("--keep_cache", action="store_true", default=DEFAULT_KEEP_CACHE,
                        help="保留缓存文件")
+    parser.add_argument("--merge_silence_ms", type=int, default=DEFAULT_MERGE_SILENCE_MS,
+                       help=f"合并相邻VAD段时允许的最大静音间隔(ms)，默认: {DEFAULT_MERGE_SILENCE_MS}")
+    parser.add_argument("--vad_max_single_segment_ms", type=int, default=DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS,
+                       help=f"VAD模型单段最大时长(ms)，默认: {DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS}")
     
     args = parser.parse_args()
     
@@ -468,8 +493,7 @@ def main():
         print(f"  缓存目录: {DEFAULT_CACHE_DIR}")
         print()
         print("使用方法:")
-        print("  python datasets_create_list_standalone.py /path/to/source_audio")
-        print("或在脚本顶部设置 DEFAULT_SOURCE_DIR 后直接运行。")
+        print("  python datasets_list_create.py /path/to/source_audio")
         return 1
     
     # 检查源目录是否存在
@@ -501,7 +525,9 @@ def main():
             args.sample_rate, args.language, output_file, 
             # 默认使用绝对路径；如需默认相对路径可在顶部改 DEFAULT_USE_ABSOLUTE_PATH
             args.max_seconds, DEFAULT_USE_ABSOLUTE_PATH and (not args.relative_path),
-            not args.keep_cache  # 默认清理缓存，除非指定保留
+            not args.keep_cache,  # 默认清理缓存，除非指定保留
+            merge_silence_ms=args.merge_silence_ms,
+            vad_max_single_segment_ms=args.vad_max_single_segment_ms,
         )
         return 0
     except Exception as e:
