@@ -18,15 +18,17 @@ https://www.apache.org/licenses/LICENSE-2.0
 SubFix
 cronrpc
 https://github.com/cronrpc/SubFix
+
+适配说明：
+本WebUI工具适配 datasets_list_create.py 的简化输出格式
+- 数据格式：音频路径|文本内容
+- 设计理念：专注核心音频-文本编辑功能
 """
 
-# SubFix - 一个用于音频文件和文本编辑的WebUI工具
+# SubFix - 一个用于音频文件和文本编辑的WebUI工具，已适配FunASR数据集格式
 
-# 全局变量区域
-g_json_key_text = "" # 用于存储JSON中文本的key名称
-g_json_key_path = "" # 用于存储JSON中音频路径的key名称 
+# 全局变量区域  
 g_load_file = "" # 要加载的文件路径
-g_load_format = "" # 加载文件的格式(json/list)
 
 g_max_json_index = 0
 g_index = 0
@@ -104,8 +106,8 @@ def reload_data(index, batch):
     for d in datas:
         output.append(
             {
-                g_json_key_text: d[g_json_key_text],
-                g_json_key_path: d[g_json_key_path]
+                "text": d["text"],
+                "wav_path": d["wav_path"]
             }
         )
     return output
@@ -127,7 +129,7 @@ def b_change_index(index, batch):
         output.append(
             gr.Textbox(
                 label=f"Text {i+index}",
-                value=_[g_json_key_text]
+                value=_["text"]
             )
             )
     for _ in range(g_batch - len(datas)):
@@ -138,7 +140,7 @@ def b_change_index(index, batch):
             )
         )
     for _ in datas:
-        output.append(_[g_json_key_path])
+        output.append(_["wav_path"])
     for _ in range(g_batch - len(datas)):
         output.append(None)
     for _ in range(g_batch):
@@ -164,14 +166,15 @@ def b_submit_change(*text_list):
     global g_data_json
     change = False
     for i, new_text in enumerate(text_list):
-        if g_index + i <= g_max_json_index:
+        if g_index + i < len(g_data_json):
             new_text_stripped = new_text.strip()
-            if (g_data_json[g_index + i][g_json_key_text].strip() != new_text_stripped):
-                g_data_json[g_index + i][g_json_key_text] = new_text_stripped
+            if (g_data_json[g_index + i]["text"].strip() != new_text_stripped):
+                g_data_json[g_index + i]["text"] = new_text_stripped
                 change = True
     if change:
         b_save_file()
-    return g_index, *b_change_index(g_index, g_batch)
+    # 返回正确的格式：slider + 所有UI组件
+    return gr.Slider(value=g_index, maximum=g_max_json_index), *b_change_index(g_index, g_batch)
 
 
 def b_delete_audio(*checkbox_list):
@@ -181,8 +184,8 @@ def b_delete_audio(*checkbox_list):
         if g_index + i < len(g_data_json):
             if (checkbox == True):
                 if g_force_delete:
-                    print("remove",g_data_json[g_index + i][g_json_key_path])
-                    os.remove(g_data_json[g_index + i][g_json_key_path])
+                    print("remove",g_data_json[g_index + i]["wav_path"])
+                    os.remove(g_data_json[g_index + i]["wav_path"])
                 g_data_json.pop(g_index + i)
                 change = True
     
@@ -226,7 +229,7 @@ def b_audio_split(audio_breakpoint, *checkbox_list):
     if len(checked_index) == 1 :
         index = checked_index[0]
         audio_json = copy.deepcopy(g_data_json[index])
-        path = audio_json[g_json_key_path]
+        path = audio_json["wav_path"]
         data, sample_rate = librosa.load(path, sr=None, mono=True)
         audio_maxframe = len(data)
         break_frame = int(audio_breakpoint * sample_rate)
@@ -238,7 +241,7 @@ def b_audio_split(audio_breakpoint, *checkbox_list):
             soundfile.write(nextpath, audio_second, sample_rate)
             soundfile.write(path, audio_first, sample_rate)
             g_data_json.insert(index + 1, audio_json)
-            g_data_json[index + 1][g_json_key_path] = nextpath
+            g_data_json[index + 1]["wav_path"] = nextpath
             b_save_file()
 
     g_max_json_index = len(g_data_json) - 1
@@ -263,15 +266,15 @@ def b_merge_audio(interval_r, *checkbox_list):
             
     if (len(checked_index)>1):
         for i in checked_index:
-            audios_path.append(g_data_json[i][g_json_key_path])
-            audios_text.append(g_data_json[i][g_json_key_text])
+            audios_path.append(g_data_json[i]["wav_path"])
+            audios_text.append(g_data_json[i]["text"])
         for i in reversed(checked_index[1:]):
-            delete_files.append(g_data_json[i][g_json_key_path])
+            delete_files.append(g_data_json[i]["wav_path"])
             g_data_json.pop(i)
 
         base_index = checked_index[0]
         base_path = audios_path[0]
-        g_data_json[base_index][g_json_key_text] = "".join(audios_text)
+        g_data_json[base_index]["text"] = "".join(audios_text)
 
         audio_list = []
         l_sample_rate = None
@@ -298,86 +301,46 @@ def b_merge_audio(interval_r, *checkbox_list):
     return gr.Slider(value=g_index, maximum=g_max_json_index), *b_change_index(g_index, g_batch)
 
 
-# 保存JSON文件
-def b_save_json():
-    """保存数据到JSON格式文件"""
-    with open(g_load_file,'w', encoding="utf-8") as file:
-        for data in g_data_json:
-            file.write(f'{json.dumps(data, ensure_ascii = False)}\n')
-
-
-def b_save_list():
+# 保存文件
+def b_save_file():
+    """保存数据到list格式文件"""
     with open(g_load_file,'w', encoding="utf-8") as file:
         for data in g_data_json:
             wav_path = data["wav_path"]
-            speaker_name = data["speaker_name"]
-            language = data["language"]
             text = data["text"]
-            file.write(f"{wav_path}|{speaker_name}|{language}|{text}".strip()+'\n')
+            # 使用简化格式：仅保存音频路径和文本内容
+            file.write(f"{wav_path}|{text}".strip()+'\n')
 
 
-# 加载JSON文件
-def b_load_json():
-    """从JSON文件加载数据"""
+# 加载文件
+def b_load_file():
+    """从list格式文件加载数据"""
     global g_data_json, g_max_json_index
-    with open(g_load_file, 'r', encoding="utf-8") as file:
-        g_data_json = file.readlines()
-        g_data_json = [json.loads(line) for line in g_data_json]
-        g_max_json_index = len(g_data_json) - 1
-
-
-def b_load_list():
-    global g_data_json, g_max_json_index
+    g_data_json = []
     with open(g_load_file, 'r', encoding="utf-8") as source:
         data_list = source.readlines()
         for _ in data_list:
             data = _.split('|')
-            if (len(data) == 4):
-                wav_path, speaker_name, language, text = data
-                g_data_json.append(
-                        {
-                            'wav_path':wav_path,
-                            'speaker_name':speaker_name,
-                            'language':language,
-                            'text':text.strip()
-                        }
-                )
+            if len(data) == 2:
+                # 简化格式：音频路径|文本内容
+                wav_path, text = data
+                audio_id = os.path.splitext(os.path.basename(wav_path))[0]  # 从路径提取ID
+                g_data_json.append({
+                    'wav_path': wav_path,
+                    'speaker_name': audio_id,  # 内部结构使用
+                    'language': 'AUTO',  # 默认语言标识
+                    'text': text.strip()
+                })
             else:
-                print("error line:", data)
+                print(f"错误行格式 (期望2个字段): {data}")
         g_max_json_index = len(g_data_json) - 1
 
 
-def b_save_file():
-    if g_load_format == "json":
-        b_save_json()
-    elif g_load_format == "list":
-        b_save_list()
-
-
-def b_load_file():
-    if g_load_format == "json":
-        b_load_json()
-    elif g_load_format == "list":
-        b_load_list()
-
-
-def set_global(load_json, load_list, json_key_text, json_key_path, batch, webui_language, force_delete):
-    global g_json_key_text, g_json_key_path, g_load_file, g_load_format, g_batch, g_language, g_force_delete
+def set_global(load_file, batch, webui_language, force_delete):
+    global g_load_file, g_batch, g_language, g_force_delete
 
     g_batch = int(batch)
-    
-    if (load_json != "None"):
-        g_load_format = "json"
-        g_load_file = load_json
-    elif (load_list != "None"):
-        g_load_format = "list"
-        g_load_file = load_list
-    else:
-        g_load_format = "list"
-        g_load_file = "demo.list"
-        
-    g_json_key_text = json_key_text
-    g_json_key_path = json_key_path
+    g_load_file = load_file if load_file != "None" else "dataset/audio_list/list.txt"
     g_language = SUBFIX_TextLanguage(webui_language)
     g_force_delete = force_delete
 
@@ -389,46 +352,15 @@ def subfix_startwebui(args):
     """
     启动WebUI服务
     args: 命令行参数,包含:
-        - load_json/load_list: 加载的文件路径
-        - json_key_text/json_key_path: JSON键名
+        - load_file: 加载的文件路径
         - g_batch: 每页显示数量
         - webui_language: 界面语言
         - force_delete: 是否物理删除文件
         - server_port: 服务端口
     """
-    set_global(args.load_json, args.load_list, args.json_key_text, args.json_key_path, args.g_batch, args.webui_language, args.force_delete)
+    set_global(args.load_file, args.g_batch, args.webui_language, args.force_delete)
     
     with gr.Blocks() as demo:
-
-        # 添加快捷键事件监听
-        demo.load(None, None, None, _js="""
-        function addKeyboardShortcuts() {
-            document.addEventListener('keydown', function(e) {
-                if (e.ctrlKey) {
-                    if (e.key === '1') {  // Ctrl + 1 保存文本
-                        const submitBtn = Array.from(document.getElementsByTagName('button')).find(el => el.textContent.includes('Submit Text'));
-                        if (submitBtn) {
-                            submitBtn.click();
-                            e.preventDefault();
-                        }
-                    } else if (e.key === '2') {  // Ctrl + 2 保存文件
-                        const saveBtn = Array.from(document.getElementsByTagName('button')).find(el => el.textContent.includes('Save File'));
-                        if (saveBtn) {
-                            saveBtn.click();
-                            e.preventDefault();
-                        }
-                    } else if (e.key === 'Delete') { // Delete 删除音频
-                        const deleteBtn = Array.from(document.getElementsByTagName('button')).find(el => el.textContent.includes('Delete Audio'));
-                        if (deleteBtn) {
-                            deleteBtn.click();
-                            e.preventDefault();
-                        }
-                    }
-                }
-            });
-        }
-        addKeyboardShortcuts();
-        """)
 
         with gr.Row():
             btn_change_index = gr.Button(g_language("Change Index"))
@@ -627,15 +559,12 @@ def subfix_startwebui(args):
 
 
 if __name__ == "__main__":
-    parser_subfix_webui = argparse.ArgumentParser(description='Process some integers.')
-    parser_subfix_webui.add_argument('--load_json', default="None", help='source file, like demo.json')
-    parser_subfix_webui.add_argument('--load_list', default="None", help='source file, like demo.list')
-    parser_subfix_webui.add_argument('--json_key_text', default="text", help='the text key name in json, Default: text')
-    parser_subfix_webui.add_argument('--json_key_path', default="wav_path", help='the path key name in json, Default: wav_path')
-    parser_subfix_webui.add_argument('--g_batch', default=10, help='max number g_batch wav to display, Default: 10')
-    parser_subfix_webui.add_argument('--webui_language', default="en", type=str, help='webui language: en or zh, Default: en')
-    parser_subfix_webui.add_argument('--force_delete', default="True", type=str, help='delete file in disk while delete items, True or False, Default: True')
-    parser_subfix_webui.add_argument('--server_port', default=7860, type=int, help='the webui port, Default: 7860')
+    parser_subfix_webui = argparse.ArgumentParser(description='SubFix WebUI - 专用于datasets_list_create.py生成的数据文件')
+    parser_subfix_webui.add_argument('--load_file', required=True, help='加载的list文件路径，格式: audio_path|text')
+    parser_subfix_webui.add_argument('--g_batch', default=8, help='每页显示的音频数量, 默认: 8')
+    parser_subfix_webui.add_argument('--webui_language', default="zh", type=str, help='界面语言: zh 或 en, 默认: zh')
+    parser_subfix_webui.add_argument('--force_delete', default="True", type=str, help='删除时是否同时删除磁盘文件, True 或 False, 默认: True')
+    parser_subfix_webui.add_argument('--server_port', default=7860, type=int, help='WebUI端口, 默认: 7860')
 
     parser_subfix = parser_subfix_webui.parse_args()
 
