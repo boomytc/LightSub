@@ -18,11 +18,11 @@ from typing import List, Dict, Optional
 
 # I/O 路径默认值（可改为你的实际路径）
 DEFAULT_SOURCE_DIR: Optional[str] = None          # 例如："/path/to/raw_audios"
-DEFAULT_TARGET_DIR: Optional[str] = None          # 例如："/path/to/dataset"
-DEFAULT_OUTPUT_FILE: Optional[str] = None         # 例如："./out/list.txt"
+DEFAULT_TARGET_DIR: Optional[str] = "dataset/audio_split"          # 工作区根目录下的音频切片目录
+DEFAULT_OUTPUT_FILE: Optional[str] = "dataset/audio_list/list.txt"         # 工作区根目录下的列表文件
 
 # 处理流程默认参数
-DEFAULT_CACHE_DIR: str = "cache"
+DEFAULT_CACHE_DIR: str = "cache"                  # 工作区根目录下的缓存目录
 DEFAULT_SAMPLE_RATE: int = 16000
 DEFAULT_LANGUAGE: str = "ZH"                      # ZH/EN/JA/...
 DEFAULT_MAX_SECONDS: int = 10
@@ -499,13 +499,21 @@ def main():
         return os.path.abspath(p) if p else None
 
     source_dir = _abs_or_none(args.source_dir)
-    target_dir = _abs_or_none(args.target_dir)
-    output_file = _abs_or_none(args.output)
+    target_dir = _abs_or_none(args.target_dir) if args.target_dir else os.path.abspath(DEFAULT_TARGET_DIR)
+    output_file = _abs_or_none(args.output) if args.output else os.path.abspath(DEFAULT_OUTPUT_FILE)
     cache_dir = _abs_or_none(args.cache_dir)
 
-    if not source_dir or not target_dir or not output_file:
-        print("错误: 必须指定 source_dir、target_dir、output。")
-        print("可在脚本顶部设置 DEFAULT_SOURCE_DIR/DEFAULT_TARGET_DIR/DEFAULT_OUTPUT_FILE，或通过命令行传入。")
+    if not source_dir:
+        print("错误: 必须指定源音频目录 source_dir。")
+        print()
+        print("默认输出路径:")
+        print(f"  目标目录: {DEFAULT_TARGET_DIR}")
+        print(f"  列表文件: {DEFAULT_OUTPUT_FILE}")
+        print(f"  缓存目录: {DEFAULT_CACHE_DIR}")
+        print()
+        print("使用方法:")
+        print("  python datasets_create_list_standalone.py /path/to/source_audio")
+        print("或在脚本顶部设置 DEFAULT_SOURCE_DIR 后直接运行。")
         return 1
     
     # 检查源目录是否存在
