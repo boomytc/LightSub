@@ -1,13 +1,14 @@
-import os
-import numpy as np
 from funasr import AutoModel
 import torch
 from sklearn.metrics.pairwise import cosine_similarity
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 
-spk_model = AutoModel(
-    model="models/spk_models/campplus_sv",
-    disable_update=True,
-)
+with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
+    spk_model = AutoModel(
+        model="models/spk_models/campplus_sv",
+        disable_update=True,
+    )
 
 speaker1_a_wav = 'models/spk_models/campplus_sv/examples/speaker1_a_cn_16k.wav'
 speaker1_b_wav = 'models/spk_models/campplus_sv/examples/speaker1_b_cn_16k.wav'
@@ -15,7 +16,8 @@ speaker2_a_wav = 'models/spk_models/campplus_sv/examples/speaker2_a_cn_16k.wav'
 
 def extract_speaker_embedding(audio_path):
     """提取说话人embedding"""
-    result = spk_model.generate(input=audio_path)
+    with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
+        result = spk_model.generate(input=audio_path)
     if isinstance(result, list) and len(result) > 0:
         return result[0].get('spk_embedding', None)
     return None
@@ -82,24 +84,3 @@ if result['embeddings'][0] is not None:
 if result['embeddings'][1] is not None:
     print(f"Speaker 2 embedding shape: {result['embeddings'][1].shape}")
 print()
-
-print("=== 保存embedding到文件 ===")
-save_dir = 'savePath/'
-os.makedirs(save_dir, exist_ok=True)
-
-emb1 = extract_speaker_embedding(speaker1_a_wav)
-emb2 = extract_speaker_embedding(speaker2_a_wav)
-
-if emb1 is not None:
-    if isinstance(emb1, torch.Tensor):
-        emb1 = emb1.cpu().numpy()
-    np.save(os.path.join(save_dir, 'speaker1_embedding.npy'), emb1)
-    print(f"Speaker 1 embedding saved to {save_dir}speaker1_embedding.npy")
-
-if emb2 is not None:
-    if isinstance(emb2, torch.Tensor):
-        emb2 = emb2.cpu().numpy()
-    np.save(os.path.join(save_dir, 'speaker2_embedding.npy'), emb2)
-    print(f"Speaker 2 embedding saved to {save_dir}speaker2_embedding.npy")
-
-print("\n=== FunASR Speaker Verification Demo 完成 ===")
