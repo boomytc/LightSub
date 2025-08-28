@@ -10,30 +10,27 @@ from tqdm import tqdm
 from typing import List, Dict, Optional
 
 """
-全局默认参数（可在此处直观修改）
-说明：
-- 位置参数 source_dir/target_dir/output 支持通过下方默认值省略命令行传参。
-- 若保持为 None，则仍需通过命令行显式传入。
+使用FunASR创建语音训练数据集
 """
 
-# I/O 路径默认值（可改为你的实际路径）
-DEFAULT_SOURCE_DIR: Optional[str] = None          # 例如："/path/to/raw_audios"
-DEFAULT_TARGET_DIR: Optional[str] = "dataset/audio_split"          # 工作区根目录下的音频切片目录
-DEFAULT_OUTPUT_FILE: Optional[str] = "dataset/audio_list/list.txt"         # 工作区根目录下的列表文件
+# I/O 路径默认值
+DEFAULT_SOURCE_DIR: Optional[str] = None
+DEFAULT_TARGET_DIR: Optional[str] = "dataset/audio_split"
+DEFAULT_OUTPUT_FILE: Optional[str] = "dataset/audio_list/list.txt"
 
-# 处理流程默认参数
-DEFAULT_CACHE_DIR: str = "cache"                  # 工作区根目录下的缓存目录
+# 处理参数
+DEFAULT_CACHE_DIR: str = "cache"
 DEFAULT_SAMPLE_RATE: int = 16000
-DEFAULT_LANGUAGE: str = "ZH"                      # ZH/EN/JA/...
+DEFAULT_LANGUAGE: str = "ZH"
 DEFAULT_MAX_SECONDS: int = 10
-DEFAULT_USE_ABSOLUTE_PATH: bool = True            # True=绝对路径; False=相对路径（等价于命令行不/启用 --relative_path）
+DEFAULT_USE_ABSOLUTE_PATH: bool = True
 DEFAULT_KEEP_CACHE: bool = False
 
-# 外部依赖/文件类型
+# 外部依赖
 FFMPEG_BIN: str = "ffmpeg"
 SUPPORTED_EXTENSIONS = ('.wav', '.mp3', '.flac', '.m4a', '.aac')
 
-# 本地模型目录（使用相对路径，便于直观修改）
+# 模型目录
 ASR_PARAFORMER_DIR = "models/asr_models/paraformer"
 ASR_SENSEVOICE_DIR = "models/asr_models/sensevoice"
 PUNC_MODEL_DIR = "models/punc_models/punc_ct"
@@ -41,13 +38,10 @@ SPK_MODEL_DIR = "models/spk_models/campplus_sv"
 VAD_MODEL_DIR = "models/vad_models/fsmn_vad"
 
 def _ensure_exists(path: str, name: str) -> str:
-    """检查本地模型目录是否存在，不存在则报错提示。"""
+    """检查模型目录是否存在"""
     if os.path.exists(path):
         return path
-    raise FileNotFoundError(
-        f"未找到{name}模型目录: {path}\n"
-        f"请将对应模型放置在该目录，或修改脚本顶部路径配置。"
-    )
+    raise FileNotFoundError(f"未找到{name}模型目录: {path}")
 
 def convert_wav_ffmpeg(source_file: str, target_file: str, sample_rate: int):
     """使用ffmpeg转换音频文件"""
@@ -63,8 +57,6 @@ def convert_wav_ffmpeg(source_file: str, target_file: str, sample_rate: int):
 
 def convert_files(source_dir: str, target_dir: str, sample_rate: int):
     """批量转换音频文件"""
-    print(f"开始转换音频文件: {source_dir} -> {target_dir}")
-    
     converted_files = []
     for root, dirs, files in os.walk(source_dir):
         for file in files:
@@ -221,14 +213,13 @@ class FunASRProcessor:
                         vad_kwargs={"max_single_segment_time": 30000},
                     )
                 
-            print(f"FunASR模型初始化成功 (语言: {self.language})")
+            print(f"模型初始化成功 (语言: {self.language})")
             
         except ImportError:
-            print("错误: 未找到funasr库")
-            print("请安装: pip install funasr")
+            print("错误: 未找到funasr库，请安装: pip install funasr")
             raise
         except Exception as e:
-            print(f"FunASR模型初始化失败: {e}")
+            print(f"模型初始化失败: {e}")
             raise
     
     def transcribe(self, audio_path: str) -> List[Dict]:
@@ -353,22 +344,16 @@ def create_dataset(converted_files: List[str], target_dir: str, sample_rate: int
     """创建数据集"""
     count = 0
     result = []
-
-    print(f"发现 {len(converted_files)} 个音频文件")
     
-    # 创建输出目录
     os.makedirs(target_dir, exist_ok=True)
     
     for audio_path in tqdm(converted_files, desc="处理音频文件"):
         try:
-            print(f"正在识别: {audio_path}")
             data_list = infer_model(audio_in=audio_path)
             
             if not data_list:
-                print(f"警告: {audio_path} 识别结果为空")
                 continue
             
-            # 使用音频文件名作为标识
             audio_name = os.path.splitext(os.path.basename(audio_path))[0]
             
             data, count = merge_audio_slice(
@@ -384,12 +369,11 @@ def create_dataset(converted_files: List[str], target_dir: str, sample_rate: int
                 
                 language = item_audio['language']
                 text = item_audio['text']
-                # 移除说话人字段，直接使用音频文件名作为标识
                 audio_id = os.path.splitext(os.path.basename(sliced_audio_path))[0]
                 result.append(f"{sliced_audio_path}|{audio_id}|{language}|{text}")
                 
         except Exception as e:
-            print(f"处理音频文件 {audio_path} 时出错: {e}")
+            print(f"处理错误 {audio_path}: {e}")
             continue
 
     return result
@@ -398,99 +382,71 @@ def clean_cache_directory(cache_dir: str):
     """清除缓存目录"""
     try:
         if os.path.exists(cache_dir):
-            print(f"\n5. 清理缓存目录: {cache_dir}")
             shutil.rmtree(cache_dir)
-            print(f"   缓存目录已清理完成")
-        else:
-            print(f"\n5. 缓存目录不存在，无需清理: {cache_dir}")
     except Exception as e:
-        print(f"清理缓存目录时出错: {e}")
+        print(f"清理缓存失败: {e}")
 
 def create_list(source_dir: str, target_dir: str, cache_dir: str, sample_rate: int,
                language: str, output_list: str, max_seconds: int, absolute_path: bool,
                clean_cache: bool = True):
     """创建训练列表文件"""
     
-    # 重采样目录
     resample_dir = os.path.join(cache_dir, "funasr_cache", "origin", f"{sample_rate}")
     
-    print("=" * 60)
-    print("开始创建数据集 (独立FunASR版本)")
-    print("=" * 60)
-    
     try:
-        # 步骤1: 转换音频文件
-        print(f"\n1. 转换音频文件到指定采样率...")
-        print(f"   源目录: {source_dir}")
-        print(f"   缓存目录: {resample_dir}")
+        print("转换音频文件...")
         converted_files = convert_files(source_dir, resample_dir, sample_rate)
         
         if not converted_files:
             print("错误: 没有找到可处理的音频文件")
             return
         
-        print(f"   转换完成，共 {len(converted_files)} 个文件")
-        
-        # 步骤2: 初始化FunASR模型（本地固定目录）
-        print(f"\n2. 初始化FunASR模型 (语言: {language})...")
+        print(f"初始化模型 (语言: {language})...")
         asr_model = init_asr_model(language)
         
-        # 步骤3: 处理音频并生成数据集
-        print(f"\n3. 处理音频文件并生成数据集...")
-        print(f"   输出目录: {target_dir}")
+        print("处理音频并生成数据集...")
         result = create_dataset(
             converted_files, target_dir, sample_rate, 
             language, asr_model, max_seconds, absolute_path
         )
         
-        # 步骤4: 保存结果到list文件
-        print(f"\n4. 保存结果到 {output_list}...")
+        print("保存结果...")
         os.makedirs(os.path.dirname(output_list) if os.path.dirname(output_list) else '.', exist_ok=True)
         
         with open(output_list, "w", encoding="utf-8") as file:
             for line in result:
-                try:
-                    file.write(line.strip() + '\n')
-                except UnicodeEncodeError:
-                    print(f"编码错误，跳过: {line}")
+                file.write(line.strip() + '\n')
         
-        print("=" * 60)
-        print(f"处理完成！")
-        print(f"生成 {len(result)} 条训练数据")
+        print(f"完成! 生成 {len(result)} 条训练数据")
         print(f"输出文件: {output_list}")
-        print(f"数据集目录: {target_dir}")
-        print("=" * 60)
         
     finally:
-        # 步骤5: 清理缓存目录（即使出现异常也要执行）
         if clean_cache:
             clean_cache_directory(cache_dir)
 
 def main():
     """主函数"""
-    parser = argparse.ArgumentParser(description="使用FunASR创建语音训练数据集（完全独立版本）")
+    parser = argparse.ArgumentParser(description="使用FunASR创建语音训练数据集")
     
-    # 位置参数（可通过脚本顶部默认值省略）
     parser.add_argument("source_dir", nargs='?', default=DEFAULT_SOURCE_DIR, type=str,
-                       help=f"源音频目录路径（可省略，默认见脚本顶部 DEFAULT_SOURCE_DIR）")
+                       help="源音频目录路径")
     parser.add_argument("target_dir", nargs='?', default=DEFAULT_TARGET_DIR, type=str,
-                       help=f"目标数据集目录路径（可省略，默认见脚本顶部 DEFAULT_TARGET_DIR）")
+                       help="目标数据集目录路径")
     parser.add_argument("output", nargs='?', default=DEFAULT_OUTPUT_FILE, type=str,
-                       help=f"输出列表文件路径（可省略，默认见脚本顶部 DEFAULT_OUTPUT_FILE）")
+                       help="输出列表文件路径")
     
-    # 可选参数
     parser.add_argument("--cache_dir", type=str, default=DEFAULT_CACHE_DIR,
                        help=f"缓存目录路径，默认: {DEFAULT_CACHE_DIR}")
     parser.add_argument("--sample_rate", type=int, default=DEFAULT_SAMPLE_RATE,
                        help=f"采样率，默认: {DEFAULT_SAMPLE_RATE}")
     parser.add_argument("--language", type=str, default=DEFAULT_LANGUAGE,
-                       help=f"语言代码，支持: ZH|EN|JA|KO|DE|RU等，默认: {DEFAULT_LANGUAGE}")
+                       help=f"语言代码，默认: {DEFAULT_LANGUAGE}")
     parser.add_argument("--max_seconds", type=int, default=DEFAULT_MAX_SECONDS,
                        help=f"最大音频片段长度(秒)，默认: {DEFAULT_MAX_SECONDS}")
     parser.add_argument("--relative_path", action="store_true",
-                       help=f"使用相对路径，默认使用绝对路径（当前默认: {'绝对' if DEFAULT_USE_ABSOLUTE_PATH else '相对'}）")
+                       help="使用相对路径")
     parser.add_argument("--keep_cache", action="store_true", default=DEFAULT_KEEP_CACHE,
-                       help=f"保留缓存文件，默认处理完成后自动清理（当前默认: {'保留' if DEFAULT_KEEP_CACHE else '清理'}）")
+                       help="保留缓存文件")
     
     args = parser.parse_args()
     
@@ -538,14 +494,6 @@ def main():
     print(f"源目录: {source_dir}")
     print(f"目标目录: {target_dir}")
     print(f"输出文件: {output_file}")
-    print(f"缓存目录: {cache_dir}")
-    # 打印本地模型目录（便于确认）
-    print("本地模型目录:")
-    print(f"  ASR(Paraformer): {ASR_PARAFORMER_DIR}")
-    print(f"  ASR(SenseVoice): {ASR_SENSEVOICE_DIR}")
-    print(f"  VAD(FSMN):       {VAD_MODEL_DIR}")
-    print(f"  PUNC(CT):        {PUNC_MODEL_DIR}")
-    print(f"  SPK(CampPlus):   {SPK_MODEL_DIR}")
     
     try:
         create_list(
