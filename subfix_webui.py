@@ -118,17 +118,31 @@ def b_change_index(index, batch):
 
 
 def b_next_index(index, batch):
-    if (index + batch) <= g_max_json_index:
-        return gr.update(value=index + batch), *b_change_index(index + batch, batch)
-    else:
-        return gr.update(value=index), *b_change_index(index, batch)
+    """
+    下一页：忽略传入的滑块值，基于当前页面真实索引翻页。
+    - index: 来自滑块的值（忽略）
+    - batch: 来自批大小滑块的值（忽略）
+    """
+    global g_index, g_batch, g_max_json_index
+    # 基于当前页面真实索引与批大小进行翻页
+    start = g_index
+    size = g_batch
+    # 允许跳到最后一页（可能是非满页）
+    new_index = min(start + size, max(g_max_json_index, 0))
+    return gr.update(value=new_index), *b_change_index(new_index, size)
 
 
 def b_previous_index(index, batch):
-    if (index - batch) >= 0:
-        return gr.update(value=index - batch), *b_change_index(index - batch, batch)
-    else:
-        return gr.update(value=0), *b_change_index(0, batch)
+    """
+    上一页：忽略传入的滑块值，基于当前页面真实索引翻页。
+    - index: 来自滑块的值（忽略）
+    - batch: 来自批大小滑块的值（忽略）
+    """
+    global g_index, g_batch
+    start = g_index
+    size = g_batch
+    new_index = max(start - size, 0)
+    return gr.update(value=new_index), *b_change_index(new_index, size)
 
 
 def make_submit_change_one(local_idx: int):
@@ -362,12 +376,13 @@ def subfix_startwebui(args):
                     with gr.Row():
                         text = gr.Textbox(
                             label = g_language("Text"),
-                            visible = True,
+                            visible = True,              
                             scale=5
                         )
                         audio_output = gr.Audio(
                             label= g_language("Output Audio"),
                             visible = True,
+                            show_download_button = False,
                             scale=5,
                         )
                         with gr.Column(min_width=120):
