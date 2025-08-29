@@ -45,7 +45,7 @@ SUBFIX_LANG_CONFIG_MAP = {
 class SUBFIX_TextLanguage():
     """
     处理WebUI界面的多语言显示
-    language: 语言代码,如'en'/'zh'
+    language: 语言代码，如'en'/'zh'
     """
     def __init__(self, language : str = "en") -> None:
         if language in SUBFIX_LANG_CONFIG_MAP.keys():
@@ -66,7 +66,7 @@ class SUBFIX_TextLanguage():
         return self.get_text(text)
 
 
-# 重新加载数据,根据index和batch大小返回数据切片
+# 重新加载数据，根据index和batch大小返回数据切片
 def reload_data(index, batch):
     """
     根据索引和批次大小重新加载数据
@@ -102,16 +102,16 @@ def b_change_index(index, batch):
     g_index, g_batch = index, batch
     datas = reload_data(index, batch)
     output = []
-    # Textboxes: use gr.update to set label/value
+    # 文本框：使用gr.update设置标签/值
     for i in range(g_batch):
         if i < len(datas):
             output.append(gr.update(label=f"{g_language('Text')} {i+index}", value=datas[i]["text"]))
         else:
             output.append(gr.update(label=g_language("Text"), value=""))
-    # Audio components: set value to path or None
+    # 音频组件：设置路径值或None
     for i in range(g_batch):
         output.append(datas[i]["wav_path"] if i < len(datas) else None)
-    # Checkboxes: reset to False by default
+    # 复选框：默认重置为False
     for _ in range(g_batch):
         output.append(False)
     return output
@@ -179,10 +179,10 @@ def make_delete_row(local_idx: int):
             path = g_data_json[abs_idx]["wav_path"]
             if g_force_delete:
                 try:
-                    print("remove", path)
+                    print("删除文件", path)
                     os.remove(path)
                 except Exception as e:
-                    print("remove failed:", e)
+                    print("删除失败:", e)
             g_data_json.pop(abs_idx)
             g_max_json_index = len(g_data_json) - 1
             if g_index > g_max_json_index:
@@ -197,6 +197,11 @@ def make_delete_row(local_idx: int):
 
 
 def get_next_path(filename):
+    """
+    生成下一个可用的文件路径
+    filename: 原始文件名
+    return: 可用的新文件路径
+    """
     base_dir = os.path.dirname(filename)
     base_name = os.path.splitext(os.path.basename(filename))[0]
     for i in range(100):
@@ -330,6 +335,13 @@ def b_load_file():
 
 
 def set_global(load_file, batch, webui_language, force_delete):
+    """
+    设置全局变量
+    load_file: 要加载的文件路径
+    batch: 批次大小
+    webui_language: 界面语言
+    force_delete: 是否强制删除文件
+    """
     global g_load_file, g_batch, g_language, g_force_delete
 
     g_batch = int(batch)
@@ -485,7 +497,7 @@ def subfix_startwebui(args):
             b_save_file
         )
 
-        # Bind row delete after lists are fully populated to ensure outputs cover all rows
+        # 将删除按钮绑定在列表完全填充后，确保输出覆盖所有行
         for i, del_btn in enumerate(delete_btns):
             del_btn.click(
                 make_delete_row(i),
@@ -498,7 +510,7 @@ def subfix_startwebui(args):
                 ],
             )
 
-        # Add auto-save on textbox change (per-row minimal update)
+        # 为文本框变化添加自动保存功能（每行最小更新）
         for i, text_box in enumerate(g_text_list):
             text_box.change(
                 make_submit_change_one(i),
