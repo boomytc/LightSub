@@ -91,16 +91,15 @@ def reload_data(index, batch):
 
 
 # 更改当前显示的数据索引
-def b_change_index(index, batch):
+def b_change_index(index):
     """
     改变当前显示的数据索引位置
     index: 新的索引位置
-    batch: 每页显示数量
     return: 更新后的UI组件列表
     """
     global g_index, g_batch
-    g_index, g_batch = index, batch
-    datas = reload_data(index, batch)
+    g_index = index
+    datas = reload_data(index, g_batch)
     output = []
     # 文本框：使用gr.update设置标签/值
     for i in range(g_batch):
@@ -117,11 +116,10 @@ def b_change_index(index, batch):
     return output
 
 
-def b_next_index(index, batch):
+def b_next_index():
     """
     下一页：忽略传入的滑块值，基于当前页面真实索引翻页。
-    - index: 来自滑块的值（忽略）
-    - batch: 来自批大小滑块的值（忽略）
+    - 无入参：使用全局 g_index/g_batch 翻页
     """
     global g_index, g_batch, g_max_json_index
     # 基于当前页面真实索引与批大小进行翻页
@@ -129,20 +127,19 @@ def b_next_index(index, batch):
     size = g_batch
     # 允许跳到最后一页（可能是非满页）
     new_index = min(start + size, max(g_max_json_index, 0))
-    return gr.update(value=new_index), *b_change_index(new_index, size)
+    return gr.update(value=new_index), *b_change_index(new_index)
 
 
-def b_previous_index(index, batch):
+def b_previous_index():
     """
     上一页：忽略传入的滑块值，基于当前页面真实索引翻页。
-    - index: 来自滑块的值（忽略）
-    - batch: 来自批大小滑块的值（忽略）
+    - 无入参：使用全局 g_index/g_batch 翻页
     """
     global g_index, g_batch
     start = g_index
     size = g_batch
     new_index = max(start - size, 0)
-    return gr.update(value=new_index), *b_change_index(new_index, size)
+    return gr.update(value=new_index), *b_change_index(new_index)
 
 
 def make_submit_change_one(local_idx: int):
@@ -189,11 +186,8 @@ def make_delete_row(local_idx: int):
                 g_index = g_max_json_index if g_max_json_index >= 0 else 0
             # 删除后始终保存列表变更
             b_save_file()
-        return gr.update(value=g_index, maximum=(g_max_json_index if g_max_json_index>=0 else 0)), *b_change_index(g_index, len(g_text_list))
+        return gr.update(value=g_index, maximum=(g_max_json_index if g_max_json_index>=0 else 0)), *b_change_index(g_index)
     return _fn
-
-
- 
 
 
 def get_next_path(filename):
@@ -243,7 +237,7 @@ def b_audio_split(audio_breakpoint, *checkbox_list):
             b_save_file()
 
     g_max_json_index = len(g_data_json) - 1
-    return gr.update(value=g_index, maximum=g_max_json_index), *b_change_index(g_index, len(g_text_list))
+    return gr.update(value=g_index, maximum=g_max_json_index), *b_change_index(g_index)
     
 # 合并音频功能    
 def b_merge_audio(interval_r, *checkbox_list):
@@ -296,7 +290,7 @@ def b_merge_audio(interval_r, *checkbox_list):
     
     g_max_json_index = len(g_data_json) - 1
     
-    return gr.update(value=g_index, maximum=g_max_json_index), *b_change_index(g_index, len(g_text_list))
+    return gr.update(value=g_index, maximum=g_max_json_index), *b_change_index(g_index)
 
 
 # 保存文件
@@ -410,9 +404,6 @@ def subfix_startwebui(args):
 
 
         with gr.Row():
-            batchsize_slider = gr.Slider(
-                    minimum=1, maximum=g_batch, value=g_batch, step=1, label=g_language("Batch Size"), scale=3, interactive=False
-            )
             interval_slider = gr.Slider(
                     minimum=0, maximum=2, value=0, step=0.01, label=g_language("Interval"), scale=3
             )
@@ -423,7 +414,6 @@ def subfix_startwebui(args):
             b_change_index,
             inputs=[
                 index_slider,
-                batchsize_slider,
             ],
             outputs=[
                 *g_text_list,
@@ -435,10 +425,7 @@ def subfix_startwebui(args):
         
         btn_previous_index.click(
             b_previous_index,
-            inputs=[
-                index_slider,
-                batchsize_slider,
-            ],
+            inputs=[],
             outputs=[
                 index_slider,
                 *g_text_list,
@@ -449,10 +436,7 @@ def subfix_startwebui(args):
         
         btn_next_index.click(
             b_next_index,
-            inputs=[
-                index_slider,
-                batchsize_slider,
-            ],
+            inputs=[],
             outputs=[
                 index_slider,
                 *g_text_list,
@@ -522,7 +506,6 @@ def subfix_startwebui(args):
             b_change_index,
             inputs=[
                 index_slider,
-                batchsize_slider,
             ],
             outputs=[
                 *g_text_list,
