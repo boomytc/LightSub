@@ -83,7 +83,7 @@ def convert_files(source_dir: str, target_dir: str, sample_rate: int):
     
     return converted_files
 
-## 处理流程：先使用外部VAD切片到磁盘，再进行段级ASR识别
+## 处理流程：先使用独立VAD进行粗分段，再使用完整模型组合进行精细识别
 
 class FunASRProcessor:
     """FunASR处理器 - 仅使用Paraformer系模型（支持中英混读）"""
@@ -198,11 +198,11 @@ class FunASRProcessor:
         return self.transcribe(audio_in)
 
 def init_asr_model():
-    """初始化ASR模型（Paraformer，默认不启用内部VAD）"""
-    return FunASRProcessor(use_internal_vad=False)
+    """初始化ASR模型（Paraformer，启用完整模型组合：ASR+VAD+PUNC+SPK）"""
+    return FunASRProcessor(use_internal_vad=True)
 
 def init_vad_model(vad_max_single_segment_ms: int):
-    """初始化VAD模型（仅分段）"""
+    """初始化独立VAD模型（仅用于粗分段）"""
     try:
         from funasr import AutoModel
         from contextlib import redirect_stderr, redirect_stdout
@@ -294,12 +294,17 @@ def pre_vad_split_and_recognize(
     asr_model: FunASRProcessor, vad_model: Any,
     max_seconds: int, merge_silence_ms: int, absolute_path: bool
 ) -> List[str]:
-    """先VAD切片到磁盘，再逐段ASR识别，返回list.txt行列表"""
+    """
+    两阶段处理流程：
+    1. 粗分段：使用独立VAD模型对原始音频进行初步分段
+    2. 精细识别：对每个分段使用完整的ASR+VAD+PUNC+SPK模型组合进行精确识别
+    返回list.txt行列表
+    """
     results: List[str] = []
     segment_max_ms = int(max_seconds * 1000)
-    for audio_path in tqdm(converted_files, desc="VAD分段与识别"):
+    for audio_path in tqdm(converted_files, desc="VAD粗分段->精细识别"):
         try:
-            # 1) VAD分段
+            # 阶段1: 使用独立VAD进行粗分段
             raw_segments = run_vad_segments(vad_model, audio_path)
             if not raw_segments:
                 continue
@@ -307,7 +312,7 @@ def pre_vad_split_and_recognize(
             if not final_segments:
                 continue
 
-            # 2) 逐段切片到目标目录
+            # 阶段2: 逐段切片并使用完整模型组合进行精细识别
             audio_name = os.path.splitext(os.path.basename(audio_path))[0]
             count = 0
             for (s_ms, e_ms) in final_segments:
@@ -318,7 +323,7 @@ def pre_vad_split_and_recognize(
                     count += 1
                     continue
 
-                # 3) 识别该切片
+                # 使用完整模型组合（ASR+VAD+PUNC+SPK）进行精细识别
                 segs = asr_model(audio_in=sliced_audio_path)
                 text = _segments_to_text(segs)
 
@@ -331,7 +336,7 @@ def pre_vad_split_and_recognize(
             continue
     return results
 
-## 统一模式：切片后立即进行段级ASR识别生成文本
+## 优化的两阶段处理模式：粗分段 + 精细识别
 
 def clean_cache_directory(cache_dir: str):
     """清除缓存目录"""
@@ -357,12 +362,12 @@ def create_list(source_dir: str, target_dir: str, cache_dir: str, sample_rate: i
         if not converted_files:
             print("错误: 没有找到可处理的音频文件")
             return
-        # 固定流程：先VAD分段，再ASR识别
-        print("初始化VAD与ASR模型...")
+        # 两阶段处理：独立VAD粗分段 + 完整模型精细识别
+        print("初始化独立VAD模型（粗分段）与完整ASR模型组合（精细识别）...")
         vad_model = init_vad_model(vad_max_single_segment_ms)
         asr_model = init_asr_model()
         os.makedirs(target_dir, exist_ok=True)
-        print("VAD分段->落盘切片->段级识别...")
+        print("阶段1: VAD粗分段 -> 阶段2: 完整模型精细识别...")
         result = pre_vad_split_and_recognize(
             converted_files, target_dir, sample_rate,
             asr_model, vad_model,
