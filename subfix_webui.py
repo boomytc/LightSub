@@ -29,8 +29,8 @@ SUBFIX_LANG_CONFIG_MAP = {
         "Delete Audio" : "删除音频",
         "Previous Index" : "前一页",
         "Next Index" : "后一页",
-        "Choose Audio" : "选择音频",
-        "Output Audio" : "Output Audio",
+        "Choose" : "选择",
+        "Output Audio" : "音频播放",
         "Text" : "文本",
         "Invert Selection": "反选",
         "Save File" : "保存文件",
@@ -106,9 +106,9 @@ def b_change_index(index, batch):
     # Textboxes: use gr.update to set label/value
     for i in range(g_batch):
         if i < len(datas):
-            output.append(gr.update(label=f"Text {i+index}", value=datas[i]["text"]))
+            output.append(gr.update(label=f"{g_language('Text')} {i+index}", value=datas[i]["text"]))
         else:
-            output.append(gr.update(label="Text", value=""))
+            output.append(gr.update(label=g_language("Text"), value=""))
     # Audio components: set value to path or None
     for i in range(g_batch):
         output.append(datas[i]["wav_path"] if i < len(datas) else None)
@@ -365,23 +365,20 @@ def subfix_startwebui(args):
                 for i in range(0,g_batch):
                     with gr.Row():
                         text = gr.Textbox(
-                            label = "Text",
+                            label = g_language("Text"),
                             visible = True,
                             scale=5
                         )
                         audio_output = gr.Audio(
                             label= g_language("Output Audio"),
                             visible = True,
-                            scale=5
+                            scale=5,
                         )
-                        with gr.Column():
+                        with gr.Column(min_width=120):
                             audio_check = gr.Checkbox(
-                                label="Yes",
-                                show_label = True,
-                                info = g_language("Choose Audio"),
-                                scale=1
+                                label=g_language("Choose"),
                             )
-                            del_btn = gr.Button(g_language("Delete Audio"), scale=1)
+                            del_btn = gr.Button(g_language("Delete Audio"))
                         g_text_list.append(text)
                         g_audio_list.append(audio_output)
                         g_checkbox_list.append(audio_check)
