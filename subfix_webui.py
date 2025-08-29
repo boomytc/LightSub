@@ -1,6 +1,5 @@
 import argparse
 import copy
-import json
 import os
 import uuid
 
@@ -124,16 +123,16 @@ def b_change_index(index, batch):
 
 def b_next_index(index, batch):
     if (index + batch) <= g_max_json_index:
-        return index + batch , *b_change_index(index + batch, batch)
+        return gr.update(value=index + batch), *b_change_index(index + batch, batch)
     else:
-        return index, *b_change_index(index, batch)
+        return gr.update(value=index), *b_change_index(index, batch)
 
 
 def b_previous_index(index, batch):
     if (index - batch) >= 0:
-        return index - batch , *b_change_index(index - batch, batch)
+        return gr.update(value=index - batch), *b_change_index(index - batch, batch)
     else:
-        return 0, *b_change_index(0, batch)
+        return gr.update(value=0), *b_change_index(0, batch)
 
 
 def b_submit_change(*text_list):
@@ -149,6 +148,27 @@ def b_submit_change(*text_list):
         b_save_file()
     # 返回正确的格式：slider(update) + 所有UI组件
     return gr.update(value=g_index, maximum=g_max_json_index), *b_change_index(g_index, g_batch)
+
+
+def make_submit_change_one(local_idx: int):
+    """
+    返回一个仅更新当前行文本的回调，避免全量刷新。
+    local_idx: 当前页面内的行索引 [0, g_batch)
+    回调签名: fn(new_text) -> None (无输出)
+    """
+    def _fn(new_text: str):
+        global g_data_json, g_index
+        if new_text is None:
+            return
+        abs_idx = g_index + local_idx
+        if 0 <= abs_idx < len(g_data_json):
+            new_text_stripped = str(new_text).strip()
+            if g_data_json[abs_idx]["text"].strip() != new_text_stripped:
+                g_data_json[abs_idx]["text"] = new_text_stripped
+                b_save_file()
+        # 无输出，避免触发组件重绘
+        return
+    return _fn
 
 
 def b_delete_audio(*checkbox_list):
@@ -487,19 +507,12 @@ def subfix_startwebui(args):
             b_save_file
         )
 
-        # Add auto-save on textbox change
-        for text_box in g_text_list:
+        # Add auto-save on textbox change (per-row minimal update)
+        for i, text_box in enumerate(g_text_list):
             text_box.change(
-                b_submit_change,
-                inputs=[
-                    *g_text_list,
-                ],
-                outputs=[
-                    index_slider,
-                    *g_text_list,
-                    *g_audio_list,
-                    *g_checkbox_list
-                ],
+                make_submit_change_one(i),
+                inputs=[text_box],
+                outputs=[],
             )
 
         demo.load(
