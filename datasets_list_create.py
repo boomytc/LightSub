@@ -1,7 +1,6 @@
 import os
 import argparse
 import subprocess
-import re
 import shutil
 from tqdm import tqdm
 from typing import List, Dict, Optional, Tuple, Any
