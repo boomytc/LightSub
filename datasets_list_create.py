@@ -6,7 +6,6 @@ from tqdm import tqdm
 from typing import List, Dict, Optional
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
-import librosa
 from funasr import AutoModel
  
 
@@ -132,34 +131,13 @@ class FunASRProcessor:
             if isinstance(result, list) and len(result) > 0:
                 res = result[0]
                 
-                # 处理输出格式
+                # 处理输出格式，仅使用带时间戳的句级结果
                 if 'sentence_info' in res:
-                    # Paraformer模型输出格式
                     for sentence in res['sentence_info']:
                         segments.append({
                             'start': sentence['start'] / 1000.0,  # 转换为秒
                             'end': sentence['end'] / 1000.0,
                             'text': sentence['text']
-                        })
-                elif 'text' in res:
-                    # 兜底：只有文本没有时间戳
-                    text = res['text']
-                    
-                    if text.strip():
-                        segments.append({
-                            'start': 0.0,
-                            'end': self._get_audio_duration(audio_path),
-                            'text': text
-                        })
-                else:
-                    # 最后兜底处理
-                    text_content = str(res) if res else ""
-                    
-                    if text_content.strip():
-                        segments.append({
-                            'start': 0.0,
-                            'end': self._get_audio_duration(audio_path),
-                            'text': text_content
                         })
             
             return segments
@@ -167,14 +145,6 @@ class FunASRProcessor:
         except Exception as e:
             print(f"转录失败 {audio_path}: {e}")
             return []
-    
-    def _get_audio_duration(self, audio_path: str) -> float:
-        """获取音频时长"""
-        try:
-            y, sr = librosa.load(audio_path, sr=None)
-            return len(y) / sr
-        except:
-            return 10.0  # 默认10秒
     
     def __call__(self, audio_in: str) -> List[Dict]:
         """调用接口"""
