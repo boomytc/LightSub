@@ -360,9 +360,6 @@ def subfix_startwebui(args):
     set_global(args.load_file, args.g_batch, args.webui_language, args.force_delete)
     
     with gr.Blocks() as demo:
-
-        with gr.Row():
-            btn_merge_audio = gr.Button(g_language("Merge Audio"))
             
         with gr.Row():
             interval_slider = gr.Slider(
@@ -371,9 +368,13 @@ def subfix_startwebui(args):
             splitpoint_slider = gr.Slider(
                     minimum=0, maximum=20.0, value=0, step=0.1, label=g_language("Audio Split Point(s)"), scale=3
             )
-            btn_audio_split = gr.Button(g_language("Split Audio"), scale=1)
-            btn_save_json = gr.Button(g_language("Save File"), visible=True, scale=1)
-        
+            
+            with gr.Column(min_width=150):
+                btn_merge_audio = gr.Button(g_language("Merge Audio"))
+                btn_audio_split = gr.Button(g_language("Split Audio"))
+
+            btn_save_json = gr.Button(g_language("Save File"), min_width=150)
+
         with gr.Row():
             with gr.Column():
                 delete_btns = []
