@@ -14,7 +14,7 @@ from typing import List, Dict, Optional, Tuple, Any
 
 设计理念：
 - 消除冗余的音频ID字段（可从路径实时提取：os.path.splitext(os.path.basename(path))[0]）
-- 移除重复的语言字段（通过--language参数统一指定）
+- 移除语言字段与语言代码指定（仅保留中英混合识别场景）
 - 专注核心功能：音频-文本映射关系
 - 简化处理流程，减少存储空间
 """
@@ -27,7 +27,6 @@ DEFAULT_OUTPUT_FILE: Optional[str] = "dataset/audio_list/list.txt"
 # 处理参数
 DEFAULT_CACHE_DIR: str = "cache"
 DEFAULT_SAMPLE_RATE: int = 16000
-DEFAULT_LANGUAGE: str = "ZH"
 DEFAULT_MAX_SECONDS: int = 10
 DEFAULT_USE_ABSOLUTE_PATH: bool = True
 DEFAULT_KEEP_CACHE: bool = False
@@ -42,7 +41,6 @@ SUPPORTED_EXTENSIONS = ('.wav', '.mp3', '.flac', '.m4a', '.aac')
 
 # 模型目录
 ASR_PARAFORMER_DIR = "models/asr_models/paraformer"
-ASR_SENSEVOICE_DIR = "models/asr_models/sensevoice"
 PUNC_MODEL_DIR = "models/punc_models/punc_ct"
 SPK_MODEL_DIR = "models/spk_models/campplus_sv"
 VAD_MODEL_DIR = "models/vad_models/fsmn_vad"
@@ -88,10 +86,9 @@ def convert_files(source_dir: str, target_dir: str, sample_rate: int):
 ## 旧的基于ASR内部VAD的合并切段逻辑已移除（统一改为先VAD切片到磁盘，再ASR识别）
 
 class FunASRProcessor:
-    """FunASR处理器 - 使用本地固定目录加载模型"""
-    
-    def __init__(self, language: str = "ZH", use_internal_vad: bool = True, vad_max_single_segment_ms: int = DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS):
-        self.language = language
+    """FunASR处理器 - 仅使用Paraformer系模型（支持中英混读）"""
+
+    def __init__(self, use_internal_vad: bool = False, vad_max_single_segment_ms: int = DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS):
         self.model = None
         self.use_internal_vad = use_internal_vad
         self.vad_max_single_segment_ms = vad_max_single_segment_ms
@@ -104,46 +101,29 @@ class FunASRProcessor:
             from contextlib import redirect_stderr, redirect_stdout
             from io import StringIO
             
-            if self.language == "ZH":
-                # 中文使用 Paraformer 组合（ASR + VAD + PUNC + SPK）
-                asr_model = _ensure_exists(ASR_PARAFORMER_DIR, "ASR(Paraformer)")
-                punc_model = _ensure_exists(PUNC_MODEL_DIR, "PUNC(CT)")
-                spk_model = _ensure_exists(SPK_MODEL_DIR, "SPK(CampPlus)")
-                with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
-                    if self.use_internal_vad:
-                        vad_model = _ensure_exists(VAD_MODEL_DIR, "VAD(FSMN)")
-                        self.model = AutoModel(
-                            model=asr_model,
-                            vad_model=vad_model,
-                            vad_kwargs={"max_single_segment_time": int(self.vad_max_single_segment_ms)},
-                            punc_model=punc_model,
-                            spk_model=spk_model,
-                            disable_update=True,
-                        )
-                    else:
-                        # 仅ASR + PUNC(+SPK)，不启用内部VAD
-                        self.model = AutoModel(
-                            model=asr_model,
-                            punc_model=punc_model,
-                            spk_model=spk_model,
-                            disable_update=True,
-                        )
-            else:
-                # 非中文使用 SenseVoice + VAD 组合
-                sensevoice_model = _ensure_exists(ASR_SENSEVOICE_DIR, "ASR(SenseVoice)")
-                
-                with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
-                    if self.use_internal_vad:
-                        vad_model = _ensure_exists(VAD_MODEL_DIR, "VAD(FSMN)")
-                        self.model = AutoModel(
-                            model=sensevoice_model,
-                            vad_model=vad_model,
-                            vad_kwargs={"max_single_segment_time": int(self.vad_max_single_segment_ms)},
-                        )
-                    else:
-                        self.model = AutoModel(
-                            model=sensevoice_model,
-                        )
+            # 仅使用 Paraformer 组合（ASR + 可选VAD + PUNC + SPK）
+            asr_model = _ensure_exists(ASR_PARAFORMER_DIR, "ASR(Paraformer)")
+            punc_model = _ensure_exists(PUNC_MODEL_DIR, "PUNC(CT)")
+            spk_model = _ensure_exists(SPK_MODEL_DIR, "SPK(CampPlus)")
+            with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
+                if self.use_internal_vad:
+                    vad_model = _ensure_exists(VAD_MODEL_DIR, "VAD(FSMN)")
+                    self.model = AutoModel(
+                        model=asr_model,
+                        vad_model=vad_model,
+                        vad_kwargs={"max_single_segment_time": int(self.vad_max_single_segment_ms)},
+                        punc_model=punc_model,
+                        spk_model=spk_model,
+                        disable_update=True,
+                    )
+                else:
+                    # 仅ASR + PUNC(+SPK)，不启用内部VAD
+                    self.model = AutoModel(
+                        model=asr_model,
+                        punc_model=punc_model,
+                        spk_model=spk_model,
+                        disable_update=True,
+                    )
             
             
         except ImportError:
@@ -158,29 +138,10 @@ class FunASRProcessor:
         try:
             from contextlib import redirect_stderr, redirect_stdout
             from io import StringIO
-            import re
             
-            # 使用FunASR进行转录
-            if self.language == "ZH":
-                # 中文模型（Paraformer）
-                with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
-                    result = self.model.generate(input=audio_path, cache={})
-            else:
-                # 非中文模型（SenseVoice）
-                generate_kwargs = {
-                    "language": "auto",  # "zh", "en", "yue", "ja", "ko", "nospeech"
-                    "use_itn": True,
-                    "batch_size_s": 60,
-                    "merge_vad": True,
-                    "merge_length_s": 15,
-                }
-                with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
-                    result = self.model.generate(
-                        input=audio_path,
-                        cache={},
-                        **generate_kwargs,
-                        output_timestamp=True,
-                    )
+            # 使用FunASR进行转录（Paraformer）
+            with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
+                result = self.model.generate(input=audio_path, cache={})
             
             # 解析结果
             segments = []
@@ -196,28 +157,9 @@ class FunASRProcessor:
                             'end': sentence['end'] / 1000.0,
                             'text': sentence['text']
                         })
-                elif 'text' in res and 'timestamp' in res:
-                    # SenseVoice模型输出格式
-                    text = res['text']
-                    timestamps = res['timestamp']
-                    
-                    # 清理SenseVoice特殊标记
-                    text = self._clean_sensevoice_text(text)
-                    
-                    if text.strip() and timestamps:
-                        # 使用SenseVoice的时间戳信息
-                        start_time = timestamps[0][0] / 1000.0 if timestamps else 0.0
-                        end_time = timestamps[-1][1] / 1000.0 if timestamps else self._get_audio_duration(audio_path)
-                        
-                        segments.append({
-                            'start': start_time,
-                            'end': end_time,
-                            'text': text
-                        })
                 elif 'text' in res:
                     # 兜底：只有文本没有时间戳
                     text = res['text']
-                    text = self._clean_sensevoice_text(text)
                     
                     if text.strip():
                         segments.append({
@@ -228,7 +170,6 @@ class FunASRProcessor:
                 else:
                     # 最后兜底处理
                     text_content = str(res) if res else ""
-                    text_content = self._clean_sensevoice_text(text_content)
                     
                     if text_content.strip():
                         segments.append({
@@ -243,16 +184,6 @@ class FunASRProcessor:
             print(f"转录失败 {audio_path}: {e}")
             return []
     
-    def _clean_sensevoice_text(self, text: str) -> str:
-        """清理SenseVoice输出中的特殊标记"""
-        if not text:
-            return ""
-        
-        import re
-        # 移除SenseVoice特殊标记：<|zh|><|NEUTRAL|><|Speech|><|withitn|>等
-        cleaned_text = re.sub(r'<\|[^|]*\|>', '', text)
-        return cleaned_text.strip()
-    
     def _get_audio_duration(self, audio_path: str) -> float:
         """获取音频时长"""
         try:
@@ -266,9 +197,9 @@ class FunASRProcessor:
         """调用接口"""
         return self.transcribe(audio_in)
 
-def init_asr_model(language: str):
-    """初始化ASR模型（启用内部VAD，遵循demo逻辑）"""
-    return FunASRProcessor(language=language, use_internal_vad=True)
+def init_asr_model():
+    """初始化ASR模型（Paraformer，默认不启用内部VAD）"""
+    return FunASRProcessor(use_internal_vad=False)
 
 def init_vad_model(vad_max_single_segment_ms: int):
     """初始化VAD模型（仅分段）"""
@@ -360,7 +291,7 @@ def _segments_to_text(segments: List[Dict]) -> str:
 
 def pre_vad_split_and_recognize(
     converted_files: List[str], target_dir: str, sample_rate: int,
-    language: str, asr_model: FunASRProcessor, vad_model: Any,
+    asr_model: FunASRProcessor, vad_model: Any,
     max_seconds: int, merge_silence_ms: int, absolute_path: bool
 ) -> List[str]:
     """先VAD切片到磁盘，再逐段ASR识别，返回list.txt行列表"""
@@ -413,7 +344,7 @@ def clean_cache_directory(cache_dir: str):
         print(f"清理缓存失败: {e}")
 
 def create_list(source_dir: str, target_dir: str, cache_dir: str, sample_rate: int,
-               language: str, output_list: str, max_seconds: int, absolute_path: bool,
+               output_list: str, max_seconds: int, absolute_path: bool,
                clean_cache: bool = True,
                merge_silence_ms: int = DEFAULT_MERGE_SILENCE_MS,
                vad_max_single_segment_ms: int = DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS):
@@ -431,12 +362,12 @@ def create_list(source_dir: str, target_dir: str, cache_dir: str, sample_rate: i
         # 固定流程：先VAD分段，再ASR识别
         print("初始化VAD与ASR模型...")
         vad_model = init_vad_model(vad_max_single_segment_ms)
-        asr_model = init_asr_model(language)
+        asr_model = init_asr_model()
         os.makedirs(target_dir, exist_ok=True)
         print("VAD分段->落盘切片->段级识别...")
         result = pre_vad_split_and_recognize(
             converted_files, target_dir, sample_rate,
-            language, asr_model, vad_model,
+            asr_model, vad_model,
             max_seconds, merge_silence_ms, absolute_path
         )
         
@@ -469,8 +400,6 @@ def main():
                        help=f"缓存目录路径，默认: {DEFAULT_CACHE_DIR}")
     parser.add_argument("--sample_rate", type=int, default=DEFAULT_SAMPLE_RATE,
                        help=f"采样率，默认: {DEFAULT_SAMPLE_RATE}")
-    parser.add_argument("--language", type=str, default=DEFAULT_LANGUAGE,
-                       help=f"语言代码，默认: {DEFAULT_LANGUAGE}")
     parser.add_argument("--max_seconds", type=int, default=DEFAULT_MAX_SECONDS,
                        help=f"最大输出片段长度(秒)，默认: {DEFAULT_MAX_SECONDS}")
     parser.add_argument("--relative_path", action="store_true",
@@ -531,7 +460,7 @@ def main():
     try:
         create_list(
             source_dir, target_dir, cache_dir, 
-            args.sample_rate, args.language, output_file, 
+            args.sample_rate, output_file, 
             # 默认使用绝对路径；如需默认相对路径可在顶部改 DEFAULT_USE_ABSOLUTE_PATH
             args.max_seconds, DEFAULT_USE_ABSOLUTE_PATH and (not args.relative_path),
             not args.keep_cache,  # 默认清理缓存，除非指定保留
