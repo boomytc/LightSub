@@ -35,7 +35,7 @@ DEFAULT_KEEP_CACHE: bool = False
 
 # 分段/合并默认参数
 DEFAULT_MERGE_SILENCE_MS: int = 300   # 合并相邻VAD段时允许的最大静音间隔(ms)
-DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS: int = 30000  # VAD单段最大时长(ms)
+DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS: int = 15000  # VAD单段最大时长(ms)
 
 # 外部依赖
 FFMPEG_BIN: str = "ffmpeg"
