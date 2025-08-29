@@ -369,28 +369,18 @@ def main():
     """主函数"""
     parser = argparse.ArgumentParser(description="使用FunASR创建语音训练数据集")
     
-    parser.add_argument("source_dir", nargs='?', default=DEFAULT_SOURCE_DIR, type=str,
-                       help="源音频目录路径")
-    parser.add_argument("target_dir", nargs='?', default=DEFAULT_TARGET_DIR, type=str,
-                       help="目标数据集目录路径")
-    parser.add_argument("output", nargs='?', default=DEFAULT_OUTPUT_FILE, type=str,
-                       help="输出列表文件路径")
-    
-    parser.add_argument("--cache_dir", type=str, default=DEFAULT_CACHE_DIR,
-                       help=f"缓存目录路径，默认: {DEFAULT_CACHE_DIR}")
-    parser.add_argument("--sample_rate", type=int, default=DEFAULT_SAMPLE_RATE,
-                       help=f"采样率，默认: {DEFAULT_SAMPLE_RATE}")
-    parser.add_argument("--max_seconds", type=int, default=DEFAULT_MAX_SECONDS,
-                       help=f"最大输出片段长度(秒)，默认: {DEFAULT_MAX_SECONDS}")
-    parser.add_argument("--relative_path", action="store_true",
-                       help="使用相对路径")
-    parser.add_argument("--keep_cache", action="store_true", default=DEFAULT_KEEP_CACHE,
-                       help="保留缓存文件")
-    parser.add_argument("--merge_silence_ms", type=int, default=DEFAULT_MERGE_SILENCE_MS,
-                       help=f"合并相邻VAD段时允许的最大静音间隔(ms)，默认: {DEFAULT_MERGE_SILENCE_MS}")
-    parser.add_argument("--vad_max_single_segment_ms", type=int, default=DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS,
-                       help=f"VAD模型单段最大时长(ms)，默认: {DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS}")
-    
+    parser.add_argument("source_dir", nargs='?', default=DEFAULT_SOURCE_DIR, type=str, help="源音频目录路径")
+    parser.add_argument("target_dir", nargs='?', default=DEFAULT_TARGET_DIR, type=str, help="目标数据集目录路径")
+    parser.add_argument("output", nargs='?', default=DEFAULT_OUTPUT_FILE, type=str, help="输出列表文件路径")
+
+    parser.add_argument("--cache_dir", type=str, default=DEFAULT_CACHE_DIR, help=f"缓存目录路径，默认: {DEFAULT_CACHE_DIR}")
+    parser.add_argument("--sample_rate", type=int, default=DEFAULT_SAMPLE_RATE, help=f"采样率，默认: {DEFAULT_SAMPLE_RATE}")
+    parser.add_argument("--max_seconds", type=int, default=DEFAULT_MAX_SECONDS, help=f"最大输出片段长度(秒)，默认: {DEFAULT_MAX_SECONDS}")
+    parser.add_argument("--relative_path", action="store_true", help="使用相对路径")
+    parser.add_argument("--keep_cache", action="store_true", default=DEFAULT_KEEP_CACHE, help="保留缓存文件")
+    parser.add_argument("--merge_silence_ms", type=int, default=DEFAULT_MERGE_SILENCE_MS, help=f"合并相邻VAD段时允许的最大静音间隔(ms)，默认: {DEFAULT_MERGE_SILENCE_MS}")
+    parser.add_argument("--vad_max_single_segment_ms", type=int, default=DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS, help=f"VAD模型单段最大时长(ms)，默认: {DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS}")
+
     args = parser.parse_args()
     
     # 解析路径，允许顶部默认值生效
