@@ -8,6 +8,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 import librosa
 from funasr import AutoModel
+ 
 
 """
 使用FunASR创建语音训练数据集
@@ -31,13 +32,13 @@ DEFAULT_OUTPUT_FILE: Optional[str] = "dataset/audio_list/list.txt"
 # 处理参数
 DEFAULT_CACHE_DIR: str = "cache"
 DEFAULT_SAMPLE_RATE: int = 16000
-DEFAULT_MAX_SECONDS: int = 10
+DEFAULT_MAX_SECONDS: int = 12
 DEFAULT_USE_ABSOLUTE_PATH: bool = True
 DEFAULT_KEEP_CACHE: bool = False
 
 # 分段/合并默认参数
 DEFAULT_MERGE_SILENCE_MS: int = 300   # 合并相邻VAD段时允许的最大静音间隔(ms)
-DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS: int = 15000  # VAD单段最大时长(ms)
+DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS: int = 12000  # VAD单段最大时长(ms)
 
 # 外部依赖
 FFMPEG_BIN: str = "ffmpeg"
@@ -48,6 +49,8 @@ ASR_PARAFORMER_DIR = "models/asr_models/paraformer"
 PUNC_MODEL_DIR = "models/punc_models/punc_ct"
 SPK_MODEL_DIR = "models/spk_models/campplus_sv"
 VAD_MODEL_DIR = "models/vad_models/fsmn_vad"
+
+ 
 
 def _ensure_exists(path: str, name: str) -> str:
     """检查模型目录是否存在"""
@@ -87,13 +90,14 @@ def convert_files(source_dir: str, target_dir: str, sample_rate: int):
     
     return converted_files
 
-## 处理流程：先使用独立VAD进行粗分段，再使用完整模型组合进行精细识别
+## 处理流程：使用组合模型（内部VAD+ASR+PUNC+SPK）直接获得句级时间戳并切片识别
 
 class FunASRProcessor:
-    """FunASR处理器 - Paraformer + VAD + PUNC + SPK（两阶段：独立VAD粗分段 + 模型精细识别）"""
+    """FunASR处理器 - Paraformer + 内部VAD + PUNC + SPK（单阶段：时间戳驱动切片）"""
 
-    def __init__(self):
+    def __init__(self, vad_max_single_segment_ms: int = DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS):
         self.model = None
+        self.vad_max_single_segment_ms = int(vad_max_single_segment_ms)
         self.init_model()
     
     def init_model(self):
@@ -103,12 +107,12 @@ class FunASRProcessor:
             asr_model = _ensure_exists(ASR_PARAFORMER_DIR, "ASR(Paraformer)")
             punc_model = _ensure_exists(PUNC_MODEL_DIR, "PUNC(CT)")
             spk_model = _ensure_exists(SPK_MODEL_DIR, "SPK(CampPlus)")
+            vad_model = _ensure_exists(VAD_MODEL_DIR, "VAD(FSMN)")
             with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
-                vad_model = _ensure_exists(VAD_MODEL_DIR, "VAD(FSMN)")
                 self.model = AutoModel(
                     model=asr_model,
                     vad_model=vad_model,
-                    vad_kwargs={"max_single_segment_time": int(DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS)},
+                    vad_kwargs={"max_single_segment_time": self.vad_max_single_segment_ms},
                     punc_model=punc_model,
                     spk_model=spk_model,
                     disable_update=True,
@@ -122,7 +126,7 @@ class FunASRProcessor:
     def transcribe(self, audio_path: str) -> List[Dict]:
         """转录音频文件"""
         try:
-            # 使用FunASR进行转录（Paraformer）
+            # 使用FunASR进行转录（Paraformer组合，返回句级时间戳）
             with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
                 result = self.model.generate(input=audio_path, cache={})
             
@@ -131,7 +135,7 @@ class FunASRProcessor:
             if isinstance(result, list) and len(result) > 0:
                 res = result[0]
                 
-                # 处理不同模型的输出格式
+                # 处理输出格式
                 if 'sentence_info' in res:
                     # Paraformer模型输出格式
                     for sentence in res['sentence_info']:
@@ -179,61 +183,13 @@ class FunASRProcessor:
         """调用接口"""
         return self.transcribe(audio_in)
 
-def init_asr_model():
-    """初始化ASR模型（Paraformer：ASR+VAD+PUNC+SPK）"""
-    return FunASRProcessor()
+def init_asr_model(vad_max_single_segment_ms: int):
+    """初始化ASR模型（Paraformer：内部VAD+ASR+PUNC+SPK）"""
+    return FunASRProcessor(vad_max_single_segment_ms=vad_max_single_segment_ms)
 
-def init_vad_model(vad_max_single_segment_ms: int):
-    """初始化独立VAD模型（仅用于粗分段）"""
-    try:
-        vad_model_dir = _ensure_exists(VAD_MODEL_DIR, "VAD(FSMN)")
-        with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
-            model = AutoModel(
-                model=vad_model_dir,
-                max_single_segment_time=int(vad_max_single_segment_ms),
-                disable_update=True,
-            )
-        # VAD模型初始化成功
-        return model
-    except Exception as e:
-        print(f"VAD模型初始化失败: {e}")
-        raise
+## 单阶段流程不再需要独立VAD模型
 
-def run_vad_segments(vad_model: Any, audio_path: str) -> List[Tuple[int, int]]:
-    """运行VAD，返回毫秒级(start_ms, end_ms)列表"""
-    try:
-        with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
-            res = vad_model.generate(input=audio_path)
-        if isinstance(res, list) and len(res) > 0 and isinstance(res[0], dict):
-            values = res[0].get('value', [])
-            segs: List[Tuple[int, int]] = []
-            for v in values:
-                if isinstance(v, (list, tuple)) and len(v) == 2:
-                    segs.append((int(v[0]), int(v[1])))
-            return segs
-    except Exception as e:
-        print(f"VAD分段失败 {audio_path}: {e}")
-    return []
-
-def merge_vad_segments(segments_ms: List[Tuple[int, int]], merge_silence_ms: int, segment_max_ms: int) -> List[Tuple[int, int]]:
-    """合并VAD段：允许小静音拼接，并限制最终段最大时长"""
-    if not segments_ms:
-        return []
-    segments = sorted(segments_ms, key=lambda x: x[0])
-    merged: List[Tuple[int, int]] = []
-    cur_s, cur_e = segments[0]
-    for s, e in segments[1:]:
-        if s < cur_s:
-            s = cur_s
-        gap = s - cur_e
-        new_len = e - cur_s
-        if gap <= merge_silence_ms and new_len <= segment_max_ms:
-            cur_e = max(cur_e, e)
-        else:
-            merged.append((cur_s, cur_e))
-            cur_s, cur_e = s, e
-    merged.append((cur_s, cur_e))
-    return merged
+## 单阶段流程不再需要独立VAD分段与合并逻辑
 
 def ffmpeg_extract_segment(source_file: str, target_file: str, start_ms: int, end_ms: int, sample_rate: int) -> bool:
     """使用ffmpeg按起止毫秒切片，输出目标采样率单声道wav"""
@@ -266,46 +222,37 @@ def _segments_to_text(segments: List[Dict]) -> str:
             parts.append(t)
     return "".join(parts).strip()
 
-def pre_vad_split_and_recognize(
+def recognize_with_internal_timestamps(
     converted_files: List[str], target_dir: str, sample_rate: int,
-    asr_model: FunASRProcessor, vad_model: Any,
-    max_seconds: int, merge_silence_ms: int, absolute_path: bool
+    asr_model: FunASRProcessor,
+    absolute_path: bool,
 ) -> List[str]:
-    """
-    两阶段处理流程：
-    1. 粗分段：使用独立VAD模型对原始音频进行初步分段
-    2. 精细识别：对每个分段使用完整的ASR+VAD+PUNC+SPK模型组合进行精确识别
-    返回list.txt行列表
-    """
+    """单阶段：直接用组合模型拿句级时间戳并切片识别，返回 list.txt 行列表"""
     results: List[str] = []
-    segment_max_ms = int(max_seconds * 1000)
-    for audio_path in tqdm(converted_files, desc="VAD粗分段->精细识别"):
+    for audio_path in tqdm(converted_files, desc="内部VAD时间戳切片+识别"):
         try:
-            # 阶段1: 使用独立VAD进行粗分段
-            raw_segments = run_vad_segments(vad_model, audio_path)
-            if not raw_segments:
+            segs = asr_model(audio_in=audio_path)
+            if not segs:
                 continue
-            final_segments = merge_vad_segments(raw_segments, merge_silence_ms, segment_max_ms)
-            if not final_segments:
-                continue
-
-            # 阶段2: 逐段切片并使用完整模型组合进行精细识别
             audio_name = os.path.splitext(os.path.basename(audio_path))[0]
             count = 0
-            for (s_ms, e_ms) in final_segments:
+            for seg in segs:
+                start_s = float(seg.get('start', 0.0) or 0.0)
+                end_s = float(seg.get('end', 0.0) or 0.0)
+                text = str(seg.get('text', '') or '').strip()
+                if not text:
+                    continue
+                start_ms = int(max(0.0, start_s) * 1000)
+                end_ms = int(max(0.0, end_s) * 1000)
+                if end_ms <= start_ms:
+                    continue
                 sliced_audio_name = f"{audio_name}_{str(count).zfill(6)}"
                 sliced_audio_path = os.path.join(target_dir, sliced_audio_name + ".wav")
-                ok = ffmpeg_extract_segment(audio_path, sliced_audio_path, s_ms, e_ms, sample_rate)
+                ok = ffmpeg_extract_segment(audio_path, sliced_audio_path, start_ms, end_ms, sample_rate)
                 if not ok:
                     count += 1
                     continue
-
-                # 使用完整模型组合（ASR+VAD+PUNC+SPK）进行精细识别
-                segs = asr_model(audio_in=sliced_audio_path)
-                text = _segments_to_text(segs)
-
                 out_path = os.path.abspath(sliced_audio_path) if absolute_path else sliced_audio_path
-                # 简化格式：仅保留核心的音频路径和文本内容
                 results.append(f"{out_path}|{text}")
                 count += 1
         except Exception as e:
@@ -339,16 +286,15 @@ def create_list(source_dir: str, target_dir: str, cache_dir: str, sample_rate: i
         if not converted_files:
             print("错误: 没有找到可处理的音频文件")
             return
-        # 两阶段处理：独立VAD粗分段 + 完整模型精细识别
-        print("初始化独立VAD模型（粗分段）与完整ASR模型组合（精细识别）...")
-        vad_model = init_vad_model(vad_max_single_segment_ms)
-        asr_model = init_asr_model()
+        # 单阶段：直接使用组合模型（内部VAD）识别并依据时间戳切片
+        print("初始化组合ASR模型（内部VAD+PUNC+SPK）...")
+        asr_model = init_asr_model(vad_max_single_segment_ms)
         os.makedirs(target_dir, exist_ok=True)
-        print("阶段1: VAD粗分段 -> 阶段2: 完整模型精细识别...")
-        result = pre_vad_split_and_recognize(
+        print("直接基于内部VAD时间戳进行切片与识别...")
+        result = recognize_with_internal_timestamps(
             converted_files, target_dir, sample_rate,
-            asr_model, vad_model,
-            max_seconds, merge_silence_ms, absolute_path
+            asr_model,
+            absolute_path,
         )
         
         print("保存结果...")
@@ -378,7 +324,7 @@ def main():
     parser.add_argument("--max_seconds", type=int, default=DEFAULT_MAX_SECONDS, help=f"最大输出片段长度(秒)，默认: {DEFAULT_MAX_SECONDS}")
     parser.add_argument("--relative_path", action="store_true", help="使用相对路径")
     parser.add_argument("--keep_cache", action="store_true", default=DEFAULT_KEEP_CACHE, help="保留缓存文件")
-    parser.add_argument("--merge_silence_ms", type=int, default=DEFAULT_MERGE_SILENCE_MS, help=f"合并相邻VAD段时允许的最大静音间隔(ms)，默认: {DEFAULT_MERGE_SILENCE_MS}")
+    parser.add_argument("--merge_silence_ms", type=int, default=DEFAULT_MERGE_SILENCE_MS, help=f"[单阶段无效] 合并相邻VAD段静音(ms)，默认: {DEFAULT_MERGE_SILENCE_MS}")
     parser.add_argument("--vad_max_single_segment_ms", type=int, default=DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS, help=f"VAD模型单段最大时长(ms)，默认: {DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS}")
 
     args = parser.parse_args()
