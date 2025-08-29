@@ -360,8 +360,6 @@ def subfix_startwebui(args):
             btn_change_index = gr.Button(g_language("Change Index"))
             btn_merge_audio = gr.Button(g_language("Merge Audio"))
             btn_delete_audio = gr.Button(g_language("Delete Audio"))
-            btn_previous_index = gr.Button(g_language("Previous Index"))
-            btn_next_index = gr.Button(g_language("Next Index"))
             
         with gr.Row():
             index_slider = gr.Slider(
@@ -407,8 +405,8 @@ def subfix_startwebui(args):
             interval_slider = gr.Slider(
                     minimum=0, maximum=2, value=0, step=0.01, label=g_language("Interval"), scale=3
             )
-            btn_theme_dark = gr.Button(g_language("Light Theme"), link="?__theme=light", scale=1)
-            btn_theme_light = gr.Button(g_language("Dark Theme"), link="?__theme=dark", scale=1)
+            btn_previous_index = gr.Button(g_language("Previous Index"), scale=1)
+            btn_next_index = gr.Button(g_language("Next Index"), scale=1)
         
         btn_change_index.click(
             b_change_index,
