@@ -32,7 +32,6 @@ SUBFIX_LANG_CONFIG_MAP = {
         "Choose" : "选择",
         "Output Audio" : "音频播放",
         "Text" : "文本",
-        "Invert Selection": "反选",
         "Save File" : "保存文件",
         "Split Audio" : "分割音频",
         "Audio Split Point(s)" : "音频分割点(单位：秒)",
@@ -180,9 +179,7 @@ def make_delete_row(local_idx: int):
     return _fn
 
 
-def b_invert_selection(*checkbox_list):
-    new_list = [not item if item is True else True for item in checkbox_list]
-    return new_list
+ 
 
 
 def get_next_path(filename):
@@ -357,7 +354,6 @@ def subfix_startwebui(args):
             )
             btn_audio_split = gr.Button(g_language("Split Audio"), scale=1)
             btn_save_json = gr.Button(g_language("Save File"), visible=True, scale=1)
-            btn_invert_selection = gr.Button(g_language("Invert Selection"), scale=1)
         
         with gr.Row():
             with gr.Column():
@@ -468,15 +464,7 @@ def subfix_startwebui(args):
             ]
         )
 
-        btn_invert_selection.click(
-            b_invert_selection,
-            inputs=[
-                *g_checkbox_list
-            ],
-            outputs=[
-                *g_checkbox_list
-            ]
-        )
+        
 
         btn_save_json.click(
             b_save_file
