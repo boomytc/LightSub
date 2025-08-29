@@ -403,7 +403,7 @@ def subfix_startwebui(args):
 
         with gr.Row():
             index_slider = gr.Slider(
-                    minimum=0, maximum=g_max_json_index, value=g_index, step=1, label=g_language("Index"), scale=1.5
+                    minimum=0, maximum=g_max_json_index, value=g_index, step=1, label=g_language("Index"), scale=1
             )
             with gr.Column(scale=1):
                 with gr.Row():
