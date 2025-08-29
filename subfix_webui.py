@@ -13,7 +13,7 @@ g_load_file = "" # 要加载的文件路径
 
 g_max_json_index = 0
 g_index = 0
-g_batch = 10
+g_batch = 8
 g_text_list = []
 g_audio_list = []
 g_checkbox_list = []
