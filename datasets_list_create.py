@@ -4,6 +4,10 @@ import subprocess
 import shutil
 from tqdm import tqdm
 from typing import List, Dict, Optional, Tuple, Any
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+import librosa
+from funasr import AutoModel
 
 """
 使用FunASR创建语音训练数据集
@@ -95,10 +99,6 @@ class FunASRProcessor:
     def init_model(self):
         """初始化FunASR模型"""
         try:
-            from funasr import AutoModel
-            from contextlib import redirect_stderr, redirect_stdout
-            from io import StringIO
-            
             # Paraformer 完整组合（ASR + VAD + PUNC + SPK）
             asr_model = _ensure_exists(ASR_PARAFORMER_DIR, "ASR(Paraformer)")
             punc_model = _ensure_exists(PUNC_MODEL_DIR, "PUNC(CT)")
@@ -115,9 +115,6 @@ class FunASRProcessor:
                 )
             
             
-        except ImportError:
-            print("错误: 未找到funasr库，请安装: pip install funasr")
-            raise
         except Exception as e:
             print(f"模型初始化失败: {e}")
             raise
@@ -125,9 +122,6 @@ class FunASRProcessor:
     def transcribe(self, audio_path: str) -> List[Dict]:
         """转录音频文件"""
         try:
-            from contextlib import redirect_stderr, redirect_stdout
-            from io import StringIO
-            
             # 使用FunASR进行转录（Paraformer）
             with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
                 result = self.model.generate(input=audio_path, cache={})
@@ -176,7 +170,6 @@ class FunASRProcessor:
     def _get_audio_duration(self, audio_path: str) -> float:
         """获取音频时长"""
         try:
-            import librosa
             y, sr = librosa.load(audio_path, sr=None)
             return len(y) / sr
         except:
@@ -193,9 +186,6 @@ def init_asr_model():
 def init_vad_model(vad_max_single_segment_ms: int):
     """初始化独立VAD模型（仅用于粗分段）"""
     try:
-        from funasr import AutoModel
-        from contextlib import redirect_stderr, redirect_stdout
-        from io import StringIO
         vad_model_dir = _ensure_exists(VAD_MODEL_DIR, "VAD(FSMN)")
         with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
             model = AutoModel(
@@ -211,8 +201,6 @@ def init_vad_model(vad_max_single_segment_ms: int):
 
 def run_vad_segments(vad_model: Any, audio_path: str) -> List[Tuple[int, int]]:
     """运行VAD，返回毫秒级(start_ms, end_ms)列表"""
-    from contextlib import redirect_stderr, redirect_stdout
-    from io import StringIO
     try:
         with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
             res = vad_model.generate(input=audio_path)
