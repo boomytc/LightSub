@@ -362,7 +362,6 @@ def subfix_startwebui(args):
     with gr.Blocks() as demo:
 
         with gr.Row():
-            btn_change_index = gr.Button(g_language("Change Index"))
             btn_merge_audio = gr.Button(g_language("Merge Audio"))
             
         with gr.Row():
@@ -401,15 +400,17 @@ def subfix_startwebui(args):
                         g_checkbox_list.append(audio_check)
                         delete_btns.append(del_btn)
 
-
-
         with gr.Row():
             index_slider = gr.Slider(
-                    minimum=0, maximum=g_max_json_index, value=g_index, step=1, label=g_language("Index"), scale=3
+                    minimum=0, maximum=g_max_json_index, value=g_index, step=1, label=g_language("Index"), scale=1.5
             )
-            btn_previous_index = gr.Button(g_language("Previous Index"), scale=1)
-            btn_next_index = gr.Button(g_language("Next Index"), scale=1)
-        
+            with gr.Column(scale=1):
+                with gr.Row():
+                    btn_previous_index = gr.Button(g_language("Previous Index"), scale=1)
+                    btn_next_index = gr.Button(g_language("Next Index"))
+
+                btn_change_index = gr.Button(g_language("Change Index"))
+                
         btn_change_index.click(
             b_change_index,
             inputs=[
