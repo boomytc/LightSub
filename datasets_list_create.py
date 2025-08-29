@@ -7,6 +7,7 @@ from typing import List, Dict, Optional
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from funasr import AutoModel
+from concurrent.futures import ProcessPoolExecutor, as_completed
  
 
 """
@@ -35,6 +36,7 @@ DEFAULT_KEEP_CACHE: bool = False
 
 # 分段参数
 DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS: int = 12000  # 内部VAD单段最大时长(ms)
+DEFAULT_ASR_WORKERS: int = 2  # ASR并发进程数（组合模型多副本）
 
 # 外部依赖
 FFMPEG_BIN: str = "ffmpeg"
@@ -154,6 +156,59 @@ class FunASRProcessor:
 
 ## 单阶段流程：由组合模型内部完成VAD分段
 
+# 并发ASR相关（子进程中使用）
+_ASR_MODEL_WORKER = None
+
+def _asr_worker_init(vad_max_single_segment_ms: int):
+    """进程池初始化：在子进程中加载一次组合ASR模型（含内部VAD）"""
+    global _ASR_MODEL_WORKER
+    asr_model = _ensure_exists(ASR_PARAFORMER_DIR, "ASR(Paraformer)")
+    punc_model = _ensure_exists(PUNC_MODEL_DIR, "PUNC(CT)")
+    spk_model = _ensure_exists(SPK_MODEL_DIR, "SPK(CampPlus)")
+    vad_model = _ensure_exists(VAD_MODEL_DIR, "VAD(FSMN)")
+    with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
+        _ASR_MODEL_WORKER = AutoModel(
+            model=asr_model,
+            vad_model=vad_model,
+            vad_kwargs={"max_single_segment_time": int(vad_max_single_segment_ms)},
+            punc_model=punc_model,
+            spk_model=spk_model,
+            disable_update=True,
+        )
+
+def _asr_worker_task(args: tuple) -> tuple:
+    """子进程任务：对单个音频用组合模型生成句级时间戳并切片，返回 (audio_path, lines)"""
+    audio_path, target_dir, sample_rate, absolute_path = args
+    try:
+        assert _ASR_MODEL_WORKER is not None, "ASR worker model not initialized"
+        with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
+            result = _ASR_MODEL_WORKER.generate(input=audio_path, cache={})
+        lines: List[str] = []
+        if isinstance(result, list) and len(result) > 0:
+            res = result[0]
+            if 'sentence_info' in res:
+                audio_name = os.path.splitext(os.path.basename(audio_path))[0]
+                count = 0
+                for sentence in res['sentence_info']:
+                    start_ms = int(max(0, int(sentence['start'])))
+                    end_ms = int(max(0, int(sentence['end'])))
+                    text = str(sentence.get('text', '')).strip()
+                    if not text or end_ms <= start_ms:
+                        continue
+                    sliced_audio_name = f"{audio_name}_{str(count).zfill(6)}"
+                    sliced_audio_path = os.path.join(target_dir, sliced_audio_name + ".wav")
+                    ok = ffmpeg_extract_segment(audio_path, sliced_audio_path, start_ms, end_ms, sample_rate)
+                    if not ok:
+                        count += 1
+                        continue
+                    out_path = os.path.abspath(sliced_audio_path) if absolute_path else sliced_audio_path
+                    lines.append(f"{out_path}|{text}")
+                    count += 1
+        return audio_path, lines
+    except Exception as e:
+        print(f"子进程ASR失败 {audio_path}: {e}")
+        return audio_path, []
+
 def ffmpeg_extract_segment(source_file: str, target_file: str, start_ms: int, end_ms: int, sample_rate: int) -> bool:
     """使用ffmpeg按起止毫秒切片，输出目标采样率单声道wav"""
     os.makedirs(os.path.dirname(target_file), exist_ok=True)
@@ -229,7 +284,8 @@ def clean_cache_directory(cache_dir: str):
 def create_list(source_dir: str, target_dir: str, cache_dir: str, sample_rate: int,
                output_list: str, absolute_path: bool,
                clean_cache: bool = True,
-               vad_max_single_segment_ms: int = DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS):
+               vad_max_single_segment_ms: int = DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS,
+               asr_workers: int = DEFAULT_ASR_WORKERS):
     """创建训练列表文件"""
     
     resample_dir = os.path.join(cache_dir, "funasr_cache", "origin", f"{sample_rate}")
@@ -241,16 +297,30 @@ def create_list(source_dir: str, target_dir: str, cache_dir: str, sample_rate: i
         if not converted_files:
             print("错误: 没有找到可处理的音频文件")
             return
-        # 单阶段：直接使用组合模型（内部VAD）识别并依据时间戳切片
-        print("初始化组合ASR模型（内部VAD+PUNC+SPK）...")
-        asr_model = FunASRProcessor(vad_max_single_segment_ms=vad_max_single_segment_ms)
         os.makedirs(target_dir, exist_ok=True)
-        print("直接基于内部VAD时间戳进行切片与识别...")
-        result = recognize_with_internal_timestamps(
-            converted_files, target_dir, sample_rate,
-            asr_model,
-            absolute_path,
-        )
+        if asr_workers and asr_workers > 1:
+            print(f"并发ASR进程数: {asr_workers}")
+            results_map = {}
+            with ProcessPoolExecutor(max_workers=asr_workers, initializer=_asr_worker_init, initargs=(vad_max_single_segment_ms,)) as pool:
+                futures = [pool.submit(_asr_worker_task, (p, target_dir, sample_rate, absolute_path)) for p in converted_files]
+                for fut in tqdm(as_completed(futures), total=len(futures), desc="并发识别"):
+                    audio_path, lines = fut.result()
+                    results_map[audio_path] = lines
+            # 保持输入顺序拼接
+            result: List[str] = []
+            for p in converted_files:
+                if p in results_map:
+                    result.extend(results_map[p])
+        else:
+            # 单阶段：直接使用组合模型（内部VAD）识别并依据时间戳切片
+            print("初始化组合ASR模型（内部VAD+PUNC+SPK）...")
+            asr_model = FunASRProcessor(vad_max_single_segment_ms=vad_max_single_segment_ms)
+            print("直接基于内部VAD时间戳进行切片与识别...")
+            result = recognize_with_internal_timestamps(
+                converted_files, target_dir, sample_rate,
+                asr_model,
+                absolute_path,
+            )
         
         print("保存结果...")
         os.makedirs(os.path.dirname(output_list) if os.path.dirname(output_list) else '.', exist_ok=True)
@@ -278,8 +348,8 @@ def main():
     parser.add_argument("--sample_rate", type=int, default=DEFAULT_SAMPLE_RATE, help=f"采样率，默认: {DEFAULT_SAMPLE_RATE}")
     parser.add_argument("--relative_path", action="store_true", help="使用相对路径")
     parser.add_argument("--keep_cache", action="store_true", default=DEFAULT_KEEP_CACHE, help="保留缓存文件")
-    # 单阶段流程无需合并静音参数
     parser.add_argument("--vad_max_single_segment_ms", type=int, default=DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS, help=f"VAD模型单段最大时长(ms)，默认: {DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS}")
+    parser.add_argument("--asr_workers", type=int, default=DEFAULT_ASR_WORKERS, help=f"ASR并发进程数(组合模型副本)，默认: {DEFAULT_ASR_WORKERS}")
 
     args = parser.parse_args()
     
@@ -335,6 +405,7 @@ def main():
             DEFAULT_USE_ABSOLUTE_PATH and (not args.relative_path),
             not args.keep_cache,  # 默认清理缓存，除非指定保留
             vad_max_single_segment_ms=args.vad_max_single_segment_ms,
+            asr_workers=args.asr_workers,
         )
         return 0
     except Exception as e:
