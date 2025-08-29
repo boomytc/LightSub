@@ -107,24 +107,16 @@ def b_change_index(index, batch):
     g_index, g_batch = index, batch
     datas = reload_data(index, batch)
     output = []
-    for i , _ in enumerate(datas):
-        output.append(
-            gr.Textbox(
-                label=f"Text {i+index}",
-                value=_["text"]
-            )
-            )
-    for _ in range(g_batch - len(datas)):
-        output.append(
-            gr.Textbox(
-                label=f"Text",
-                value=""
-            )
-        )
-    for _ in datas:
-        output.append(_["wav_path"])
-    for _ in range(g_batch - len(datas)):
-        output.append(None)
+    # Textboxes: use gr.update to set label/value
+    for i in range(g_batch):
+        if i < len(datas):
+            output.append(gr.update(label=f"Text {i+index}", value=datas[i]["text"]))
+        else:
+            output.append(gr.update(label="Text", value=""))
+    # Audio components: set value to path or None
+    for i in range(g_batch):
+        output.append(datas[i]["wav_path"] if i < len(datas) else None)
+    # Checkboxes: reset to False by default
     for _ in range(g_batch):
         output.append(False)
     return output
@@ -155,8 +147,8 @@ def b_submit_change(*text_list):
                 change = True
     if change:
         b_save_file()
-    # 返回正确的格式：slider + 所有UI组件
-    return gr.Slider(value=g_index, maximum=g_max_json_index), *b_change_index(g_index, g_batch)
+    # 返回正确的格式：slider(update) + 所有UI组件
+    return gr.update(value=g_index, maximum=g_max_json_index), *b_change_index(g_index, g_batch)
 
 
 def b_delete_audio(*checkbox_list):
@@ -177,7 +169,7 @@ def b_delete_audio(*checkbox_list):
         g_index = g_index if g_index >= 0 else 0
     if g_force_delete and change:
         b_save_file()
-    return gr.Slider(value=g_index, maximum=(g_max_json_index if g_max_json_index>=0 else 0)), *b_change_index(g_index, g_batch)
+    return gr.update(value=g_index, maximum=(g_max_json_index if g_max_json_index>=0 else 0)), *b_change_index(g_index, g_batch)
 
 
 def b_invert_selection(*checkbox_list):
@@ -227,7 +219,7 @@ def b_audio_split(audio_breakpoint, *checkbox_list):
             b_save_file()
 
     g_max_json_index = len(g_data_json) - 1
-    return gr.Slider(value=g_index, maximum=g_max_json_index), *b_change_index(g_index, g_batch)
+    return gr.update(value=g_index, maximum=g_max_json_index), *b_change_index(g_index, g_batch)
     
 # 合并音频功能    
 def b_merge_audio(interval_r, *checkbox_list):
@@ -280,7 +272,7 @@ def b_merge_audio(interval_r, *checkbox_list):
     
     g_max_json_index = len(g_data_json) - 1
     
-    return gr.Slider(value=g_index, maximum=g_max_json_index), *b_change_index(g_index, g_batch)
+    return gr.update(value=g_index, maximum=g_max_json_index), *b_change_index(g_index, g_batch)
 
 
 # 保存文件
