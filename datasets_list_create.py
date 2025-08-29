@@ -3,7 +3,7 @@ import argparse
 import subprocess
 import shutil
 from tqdm import tqdm
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 import librosa
@@ -18,8 +18,7 @@ from funasr import AutoModel
 示例：/path/to/audio_000001.wav|这是识别出的文本内容
 
 设计理念：
-- 消除冗余的音频ID字段（可从路径实时提取：os.path.splitext(os.path.basename(path))[0]）
-- 移除语言字段与语言代码指定（仅保留中英混合识别场景）
+- 统一中英混读识别，无需指定语言
 - 专注核心功能：音频-文本映射关系
 - 简化处理流程，减少存储空间
 """
@@ -32,13 +31,11 @@ DEFAULT_OUTPUT_FILE: Optional[str] = "dataset/audio_list/list.txt"
 # 处理参数
 DEFAULT_CACHE_DIR: str = "cache"
 DEFAULT_SAMPLE_RATE: int = 16000
-DEFAULT_MAX_SECONDS: int = 12
 DEFAULT_USE_ABSOLUTE_PATH: bool = True
 DEFAULT_KEEP_CACHE: bool = False
 
-# 分段/合并默认参数
-DEFAULT_MERGE_SILENCE_MS: int = 300   # 合并相邻VAD段时允许的最大静音间隔(ms)
-DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS: int = 12000  # VAD单段最大时长(ms)
+# 分段参数
+DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS: int = 12000  # 内部VAD单段最大时长(ms)
 
 # 外部依赖
 FFMPEG_BIN: str = "ffmpeg"
@@ -187,9 +184,7 @@ def init_asr_model(vad_max_single_segment_ms: int):
     """初始化ASR模型（Paraformer：内部VAD+ASR+PUNC+SPK）"""
     return FunASRProcessor(vad_max_single_segment_ms=vad_max_single_segment_ms)
 
-## 单阶段流程不再需要独立VAD模型
-
-## 单阶段流程不再需要独立VAD分段与合并逻辑
+## 单阶段流程：由组合模型内部完成VAD分段
 
 def ffmpeg_extract_segment(source_file: str, target_file: str, start_ms: int, end_ms: int, sample_rate: int) -> bool:
     """使用ffmpeg按起止毫秒切片，输出目标采样率单声道wav"""
@@ -213,14 +208,7 @@ def ffmpeg_extract_segment(source_file: str, target_file: str, start_ms: int, en
         print(f"切片失败 {source_file} [{start_ms},{end_ms}]ms: {e}")
         return False
 
-def _segments_to_text(segments: List[Dict]) -> str:
-    """将转录分段合并为单条文本"""
-    parts: List[str] = []
-    for seg in segments or []:
-        t = str(seg.get('text', '')).strip()
-        if t:
-            parts.append(t)
-    return "".join(parts).strip()
+ 
 
 def recognize_with_internal_timestamps(
     converted_files: List[str], target_dir: str, sample_rate: int,
@@ -260,7 +248,7 @@ def recognize_with_internal_timestamps(
             continue
     return results
 
-## 优化的两阶段处理模式：粗分段 + 精细识别
+## 单阶段处理模式
 
 def clean_cache_directory(cache_dir: str):
     """清除缓存目录"""
@@ -271,9 +259,8 @@ def clean_cache_directory(cache_dir: str):
         print(f"清理缓存失败: {e}")
 
 def create_list(source_dir: str, target_dir: str, cache_dir: str, sample_rate: int,
-               output_list: str, max_seconds: int, absolute_path: bool,
+               output_list: str, absolute_path: bool,
                clean_cache: bool = True,
-               merge_silence_ms: int = DEFAULT_MERGE_SILENCE_MS,
                vad_max_single_segment_ms: int = DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS):
     """创建训练列表文件"""
     
@@ -321,10 +308,9 @@ def main():
 
     parser.add_argument("--cache_dir", type=str, default=DEFAULT_CACHE_DIR, help=f"缓存目录路径，默认: {DEFAULT_CACHE_DIR}")
     parser.add_argument("--sample_rate", type=int, default=DEFAULT_SAMPLE_RATE, help=f"采样率，默认: {DEFAULT_SAMPLE_RATE}")
-    parser.add_argument("--max_seconds", type=int, default=DEFAULT_MAX_SECONDS, help=f"最大输出片段长度(秒)，默认: {DEFAULT_MAX_SECONDS}")
     parser.add_argument("--relative_path", action="store_true", help="使用相对路径")
     parser.add_argument("--keep_cache", action="store_true", default=DEFAULT_KEEP_CACHE, help="保留缓存文件")
-    parser.add_argument("--merge_silence_ms", type=int, default=DEFAULT_MERGE_SILENCE_MS, help=f"[单阶段无效] 合并相邻VAD段静音(ms)，默认: {DEFAULT_MERGE_SILENCE_MS}")
+    # 单阶段流程无需合并静音参数
     parser.add_argument("--vad_max_single_segment_ms", type=int, default=DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS, help=f"VAD模型单段最大时长(ms)，默认: {DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS}")
 
     args = parser.parse_args()
@@ -378,9 +364,8 @@ def main():
             source_dir, target_dir, cache_dir, 
             args.sample_rate, output_file, 
             # 默认使用绝对路径；如需默认相对路径可在顶部改 DEFAULT_USE_ABSOLUTE_PATH
-            args.max_seconds, DEFAULT_USE_ABSOLUTE_PATH and (not args.relative_path),
+            DEFAULT_USE_ABSOLUTE_PATH and (not args.relative_path),
             not args.keep_cache,  # 默认清理缓存，除非指定保留
-            merge_silence_ms=args.merge_silence_ms,
             vad_max_single_segment_ms=args.vad_max_single_segment_ms,
         )
         return 0
