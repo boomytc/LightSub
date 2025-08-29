@@ -366,8 +366,8 @@ def subfix_startwebui(args):
             btn_merge_audio = gr.Button(g_language("Merge Audio"))
             
         with gr.Row():
-            index_slider = gr.Slider(
-                    minimum=0, maximum=g_max_json_index, value=g_index, step=1, label=g_language("Index"), scale=3
+            interval_slider = gr.Slider(
+                    minimum=0, maximum=2, value=0, step=0.01, label=g_language("Interval"), scale=3
             )
             splitpoint_slider = gr.Slider(
                     minimum=0, maximum=20.0, value=0, step=0.1, label=g_language("Audio Split Point(s)"), scale=3
@@ -404,8 +404,8 @@ def subfix_startwebui(args):
 
 
         with gr.Row():
-            interval_slider = gr.Slider(
-                    minimum=0, maximum=2, value=0, step=0.01, label=g_language("Interval"), scale=3
+            index_slider = gr.Slider(
+                    minimum=0, maximum=g_max_json_index, value=g_index, step=1, label=g_language("Index"), scale=3
             )
             btn_previous_index = gr.Button(g_language("Previous Index"), scale=1)
             btn_next_index = gr.Button(g_language("Next Index"), scale=1)
