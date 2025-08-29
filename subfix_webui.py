@@ -25,13 +25,10 @@ g_language = None
 SUBFIX_LANG_CONFIG_MAP = {
     "zh": {
         "Change Index" : "改变索引",
-        "Submit Text" : "保存文本",
         "Merge Audio" : "合并音频",
         "Delete Audio" : "删除音频",
         "Previous Index" : "前一页",
         "Next Index" : "后一页",
-        "Light Theme" : "亮色模式",
-        "Dark Theme" : "黑暗模式",
         "Choose Audio" : "选择音频",
         "Output Audio" : "Output Audio",
         "Text" : "文本",
@@ -135,21 +132,6 @@ def b_previous_index(index, batch):
         return gr.update(value=0), *b_change_index(0, batch)
 
 
-def b_submit_change(*text_list):
-    global g_data_json
-    change = False
-    for i, new_text in enumerate(text_list):
-        if g_index + i < len(g_data_json):
-            new_text_stripped = new_text.strip()
-            if (g_data_json[g_index + i]["text"].strip() != new_text_stripped):
-                g_data_json[g_index + i]["text"] = new_text_stripped
-                change = True
-    if change:
-        b_save_file()
-    # 返回正确的格式：slider(update) + 所有UI组件
-    return gr.update(value=g_index, maximum=g_max_json_index), *b_change_index(g_index, g_batch)
-
-
 def make_submit_change_one(local_idx: int):
     """
     返回一个仅更新当前行文本的回调，避免全量刷新。
@@ -171,25 +153,31 @@ def make_submit_change_one(local_idx: int):
     return _fn
 
 
-def b_delete_audio(*checkbox_list):
-    global g_data_json, g_index, g_max_json_index
-    change = False
-    for i, checkbox in reversed(list(enumerate(checkbox_list))):
-        if g_index + i < len(g_data_json):
-            if (checkbox == True):
-                if g_force_delete:
-                    print("remove",g_data_json[g_index + i]["wav_path"])
-                    os.remove(g_data_json[g_index + i]["wav_path"])
-                g_data_json.pop(g_index + i)
-                change = True
-    
-    g_max_json_index = len(g_data_json)-1
-    if g_index > g_max_json_index:
-        g_index = g_max_json_index
-        g_index = g_index if g_index >= 0 else 0
-    if g_force_delete and change:
-        b_save_file()
-    return gr.update(value=g_index, maximum=(g_max_json_index if g_max_json_index>=0 else 0)), *b_change_index(g_index, g_batch)
+def make_delete_row(local_idx: int):
+    """
+    返回一个仅删除当前行的回调。
+    local_idx: 当前页面内的行索引 [0, g_batch)
+    回调签名: fn() -> (index_slider_update, *page_updates)
+    """
+    def _fn():
+        global g_data_json, g_index, g_max_json_index
+        abs_idx = g_index + local_idx
+        if 0 <= abs_idx < len(g_data_json):
+            path = g_data_json[abs_idx]["wav_path"]
+            if g_force_delete:
+                try:
+                    print("remove", path)
+                    os.remove(path)
+                except Exception as e:
+                    print("remove failed:", e)
+            g_data_json.pop(abs_idx)
+            g_max_json_index = len(g_data_json) - 1
+            if g_index > g_max_json_index:
+                g_index = g_max_json_index if g_max_json_index >= 0 else 0
+            # 删除后始终保存列表变更
+            b_save_file()
+        return gr.update(value=g_index, maximum=(g_max_json_index if g_max_json_index>=0 else 0)), *b_change_index(g_index, len(g_text_list))
+    return _fn
 
 
 def b_invert_selection(*checkbox_list):
@@ -239,7 +227,7 @@ def b_audio_split(audio_breakpoint, *checkbox_list):
             b_save_file()
 
     g_max_json_index = len(g_data_json) - 1
-    return gr.update(value=g_index, maximum=g_max_json_index), *b_change_index(g_index, g_batch)
+    return gr.update(value=g_index, maximum=g_max_json_index), *b_change_index(g_index, len(g_text_list))
     
 # 合并音频功能    
 def b_merge_audio(interval_r, *checkbox_list):
@@ -292,7 +280,7 @@ def b_merge_audio(interval_r, *checkbox_list):
     
     g_max_json_index = len(g_data_json) - 1
     
-    return gr.update(value=g_index, maximum=g_max_json_index), *b_change_index(g_index, g_batch)
+    return gr.update(value=g_index, maximum=g_max_json_index), *b_change_index(g_index, len(g_text_list))
 
 
 # 保存文件
@@ -359,7 +347,6 @@ def subfix_startwebui(args):
         with gr.Row():
             btn_change_index = gr.Button(g_language("Change Index"))
             btn_merge_audio = gr.Button(g_language("Merge Audio"))
-            btn_delete_audio = gr.Button(g_language("Delete Audio"))
             
         with gr.Row():
             index_slider = gr.Slider(
@@ -374,7 +361,8 @@ def subfix_startwebui(args):
         
         with gr.Row():
             with gr.Column():
-                for _ in range(0,g_batch):
+                delete_btns = []
+                for i in range(0,g_batch):
                     with gr.Row():
                         text = gr.Textbox(
                             label = "Text",
@@ -386,15 +374,18 @@ def subfix_startwebui(args):
                             visible = True,
                             scale=5
                         )
-                        audio_check = gr.Checkbox(
-                            label="Yes",
-                            show_label = True,
-                            info = g_language("Choose Audio"),
-                            scale=1
-                        )
+                        with gr.Column():
+                            audio_check = gr.Checkbox(
+                                label="Yes",
+                                show_label = True,
+                                info = g_language("Choose Audio"),
+                                scale=1
+                            )
+                            del_btn = gr.Button(g_language("Delete Audio"), scale=1)
                         g_text_list.append(text)
                         g_audio_list.append(audio_output)
                         g_checkbox_list.append(audio_check)
+                        delete_btns.append(del_btn)
 
 
 
@@ -450,18 +441,7 @@ def subfix_startwebui(args):
             ],
         )
 
-        btn_delete_audio.click(
-            b_delete_audio,
-            inputs=[
-                *g_checkbox_list
-            ],
-            outputs=[
-                index_slider,
-                *g_text_list,
-                *g_audio_list,
-                *g_checkbox_list
-            ]
-        )
+        # 全局删除按钮已移除，改为每行单独删除
 
         btn_merge_audio.click(
             b_merge_audio,
@@ -504,6 +484,19 @@ def subfix_startwebui(args):
         btn_save_json.click(
             b_save_file
         )
+
+        # Bind row delete after lists are fully populated to ensure outputs cover all rows
+        for i, del_btn in enumerate(delete_btns):
+            del_btn.click(
+                make_delete_row(i),
+                inputs=[],
+                outputs=[
+                    index_slider,
+                    *g_text_list,
+                    *g_audio_list,
+                    *g_checkbox_list
+                ],
+            )
 
         # Add auto-save on textbox change (per-row minimal update)
         for i, text_box in enumerate(g_text_list):
