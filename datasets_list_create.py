@@ -86,12 +86,10 @@ def convert_files(source_dir: str, target_dir: str, sample_rate: int):
 ## 处理流程：先使用独立VAD进行粗分段，再使用完整模型组合进行精细识别
 
 class FunASRProcessor:
-    """FunASR处理器 - 仅使用Paraformer系模型（支持中英混读）"""
+    """FunASR处理器 - Paraformer + VAD + PUNC + SPK（两阶段：独立VAD粗分段 + 模型精细识别）"""
 
-    def __init__(self, use_internal_vad: bool = False, vad_max_single_segment_ms: int = DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS):
+    def __init__(self):
         self.model = None
-        self.use_internal_vad = use_internal_vad
-        self.vad_max_single_segment_ms = vad_max_single_segment_ms
         self.init_model()
     
     def init_model(self):
@@ -101,29 +99,20 @@ class FunASRProcessor:
             from contextlib import redirect_stderr, redirect_stdout
             from io import StringIO
             
-            # 仅使用 Paraformer 组合（ASR + 可选VAD + PUNC + SPK）
+            # Paraformer 完整组合（ASR + VAD + PUNC + SPK）
             asr_model = _ensure_exists(ASR_PARAFORMER_DIR, "ASR(Paraformer)")
             punc_model = _ensure_exists(PUNC_MODEL_DIR, "PUNC(CT)")
             spk_model = _ensure_exists(SPK_MODEL_DIR, "SPK(CampPlus)")
             with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
-                if self.use_internal_vad:
-                    vad_model = _ensure_exists(VAD_MODEL_DIR, "VAD(FSMN)")
-                    self.model = AutoModel(
-                        model=asr_model,
-                        vad_model=vad_model,
-                        vad_kwargs={"max_single_segment_time": int(self.vad_max_single_segment_ms)},
-                        punc_model=punc_model,
-                        spk_model=spk_model,
-                        disable_update=True,
-                    )
-                else:
-                    # 仅ASR + PUNC(+SPK)，不启用内部VAD
-                    self.model = AutoModel(
-                        model=asr_model,
-                        punc_model=punc_model,
-                        spk_model=spk_model,
-                        disable_update=True,
-                    )
+                vad_model = _ensure_exists(VAD_MODEL_DIR, "VAD(FSMN)")
+                self.model = AutoModel(
+                    model=asr_model,
+                    vad_model=vad_model,
+                    vad_kwargs={"max_single_segment_time": int(DEFAULT_VAD_MAX_SINGLE_SEGMENT_MS)},
+                    punc_model=punc_model,
+                    spk_model=spk_model,
+                    disable_update=True,
+                )
             
             
         except ImportError:
@@ -198,8 +187,8 @@ class FunASRProcessor:
         return self.transcribe(audio_in)
 
 def init_asr_model():
-    """初始化ASR模型（Paraformer，启用完整模型组合：ASR+VAD+PUNC+SPK）"""
-    return FunASRProcessor(use_internal_vad=True)
+    """初始化ASR模型（Paraformer：ASR+VAD+PUNC+SPK）"""
+    return FunASRProcessor()
 
 def init_vad_model(vad_max_single_segment_ms: int):
     """初始化独立VAD模型（仅用于粗分段）"""
