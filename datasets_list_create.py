@@ -150,9 +150,7 @@ class FunASRProcessor:
         """调用接口"""
         return self.transcribe(audio_in)
 
-def init_asr_model(vad_max_single_segment_ms: int):
-    """初始化ASR模型（Paraformer：内部VAD+ASR+PUNC+SPK）"""
-    return FunASRProcessor(vad_max_single_segment_ms=vad_max_single_segment_ms)
+ 
 
 ## 单阶段流程：由组合模型内部完成VAD分段
 
@@ -245,7 +243,7 @@ def create_list(source_dir: str, target_dir: str, cache_dir: str, sample_rate: i
             return
         # 单阶段：直接使用组合模型（内部VAD）识别并依据时间戳切片
         print("初始化组合ASR模型（内部VAD+PUNC+SPK）...")
-        asr_model = init_asr_model(vad_max_single_segment_ms)
+        asr_model = FunASRProcessor(vad_max_single_segment_ms=vad_max_single_segment_ms)
         os.makedirs(target_dir, exist_ok=True)
         print("直接基于内部VAD时间戳进行切片与识别...")
         result = recognize_with_internal_timestamps(
