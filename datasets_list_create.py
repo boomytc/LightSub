@@ -83,7 +83,7 @@ def convert_files(source_dir: str, target_dir: str, sample_rate: int):
     
     return converted_files
 
-## 旧的基于ASR内部VAD的合并切段逻辑已移除（统一改为先VAD切片到磁盘，再ASR识别）
+## 处理流程：先使用外部VAD切片到磁盘，再进行段级ASR识别
 
 class FunASRProcessor:
     """FunASR处理器 - 仅使用Paraformer系模型（支持中英混读）"""
@@ -331,9 +331,7 @@ def pre_vad_split_and_recognize(
             continue
     return results
 
-## 仅VAD切片（不识别）的逻辑已移除；统一在切片后立即进行段级ASR识别生成文本
-
-## 旧的基于ASR内部VAD的create_dataset逻辑已移除
+## 统一模式：切片后立即进行段级ASR识别生成文本
 
 def clean_cache_directory(cache_dir: str):
     """清除缓存目录"""
