@@ -2,6 +2,8 @@ import argparse
 import copy
 import os
 import uuid
+import subprocess
+import platform
 
 import librosa
 import gradio as gr
@@ -32,11 +34,12 @@ SUBFIX_LANG_CONFIG_MAP = {
         "Choose" : "选择",
         "Output Audio" : "音频播放",
         "Text" : "文本",
-        "Save File" : "保存文件",
         "Split Audio" : "分割音频",
         "Audio Split Point(s)" : "音频分割点(单位：秒)",
         "Index":"索引",
-        "Interval":"合并间隔（单位：秒）"
+        "Interval":"合并间隔（单位：秒）",
+        "Open in Editor" : "在编辑器中打开",
+        "Reload File" : "重新加载文件"
     },
 }
 
@@ -174,12 +177,11 @@ def make_delete_row(local_idx: int):
         abs_idx = g_index + local_idx
         if 0 <= abs_idx < len(g_data_json):
             path = g_data_json[abs_idx]["wav_path"]
-            if g_force_delete:
-                try:
-                    print("删除文件", path)
-                    os.remove(path)
-                except Exception as e:
-                    print("删除失败:", e)
+            try:
+                print("删除文件", path)
+                os.remove(path)
+            except Exception as e:
+                print("删除失败:", e)
             g_data_json.pop(abs_idx)
             g_max_json_index = len(g_data_json) - 1
             if g_index > g_max_json_index:
@@ -328,20 +330,59 @@ def b_load_file():
         g_max_json_index = len(g_data_json) - 1
 
 
-def set_global(load_file, batch, webui_language, force_delete):
+def b_open_in_editor():
+    """在默认编辑器中打开当前文件"""
+    try:
+        if platform.system() == "Darwin":  # macOS
+            subprocess.run(["open", g_load_file])
+        elif platform.system() == "Windows":
+            subprocess.run(["start", g_load_file], shell=True)
+        else:  # Linux
+            subprocess.run(["xdg-open", g_load_file])
+        
+        return f"文件已在编辑器中打开: {g_load_file}"
+    except Exception as e:
+        return f"打开编辑器失败: {e}"
+
+
+def b_reload_file():
+    """重新加载文件并刷新界面"""
+    global g_index, g_max_json_index
+    try:
+        # 保存当前索引位置
+        current_index = g_index
+        
+        # 重新加载文件
+        b_load_file()
+        
+        # 确保索引不越界
+        if current_index > g_max_json_index:
+            current_index = max(0, g_max_json_index)
+        
+        g_index = current_index
+        
+        # 返回更新后的界面状态
+        index_update = gr.update(value=current_index, maximum=(g_max_json_index if g_max_json_index >= 0 else 0))
+        page_updates = b_change_index(current_index)
+        
+        return f"文件重新加载成功，共 {len(g_data_json)} 条数据", index_update, *page_updates
+        
+    except Exception as e:
+        return f"重新加载文件失败: {e}", gr.update(), *b_change_index(g_index)
+
+
+def set_global(load_file, batch, webui_language):
     """
     设置全局变量
     load_file: 要加载的文件路径
     batch: 批次大小
     webui_language: 界面语言
-    force_delete: 是否强制删除文件
     """
-    global g_load_file, g_batch, g_language, g_force_delete
+    global g_load_file, g_batch, g_language
 
     g_batch = int(batch)
     g_load_file = load_file if load_file != "None" else "dataset/audio_list/list.txt"
     g_language = SUBFIX_TextLanguage(webui_language)
-    g_force_delete = force_delete
 
     b_load_file()
 
@@ -354,10 +395,9 @@ def subfix_startwebui(args):
         - load_file: 加载的文件路径
         - g_batch: 每页显示数量
         - webui_language: 界面语言
-        - force_delete: 是否物理删除文件
         - server_port: 服务端口
     """
-    set_global(args.load_file, args.g_batch, args.webui_language, args.force_delete)
+    set_global(args.load_file, args.g_batch, args.webui_language)
     
     with gr.Blocks() as demo:
             
@@ -373,7 +413,12 @@ def subfix_startwebui(args):
                 btn_merge_audio = gr.Button(g_language("Merge Audio"))
                 btn_audio_split = gr.Button(g_language("Split Audio"))
 
-            btn_save_json = gr.Button(g_language("Save File"), min_width=150)
+            with gr.Column(min_width=150):
+                btn_open_editor = gr.Button(g_language("Open in Editor"), variant="secondary")
+                btn_reload_file = gr.Button(g_language("Reload File"), variant="secondary")
+
+        # 添加状态显示区域
+        status_text = gr.Textbox(label="状态", interactive=False, visible=True)
 
         with gr.Row():
             with gr.Column():
@@ -479,8 +524,23 @@ def subfix_startwebui(args):
 
         
 
-        btn_save_json.click(
-            b_save_file
+
+        btn_open_editor.click(
+            b_open_in_editor,
+            inputs=[],
+            outputs=[status_text]
+        )
+
+        btn_reload_file.click(
+            b_reload_file,
+            inputs=[],
+            outputs=[
+                status_text,
+                index_slider,
+                *g_text_list,
+                *g_audio_list,
+                *g_checkbox_list
+            ]
         )
 
         # 将删除按钮绑定在列表完全填充后，确保输出覆盖所有行
@@ -524,11 +584,8 @@ if __name__ == "__main__":
     parser_subfix_webui.add_argument('--load_file', required=True, help='加载的list文件路径，格式: audio_path|text')
     parser_subfix_webui.add_argument('--g_batch', default=8, help='每页显示的音频数量, 默认: 8')
     parser_subfix_webui.add_argument('--webui_language', default="zh", type=str, help='界面语言: zh 或 en, 默认: zh')
-    parser_subfix_webui.add_argument('--force_delete', default="True", type=str, help='删除时是否同时删除磁盘文件, True 或 False, 默认: True')
     parser_subfix_webui.add_argument('--server_port', default=7860, type=int, help='WebUI端口, 默认: 7860')
 
     parser_subfix = parser_subfix_webui.parse_args()
-
-    parser_subfix.force_delete = (parser_subfix.force_delete.upper() == "TRUE")
 
     subfix_startwebui(parser_subfix)
