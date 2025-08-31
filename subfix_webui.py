@@ -22,6 +22,9 @@ g_checkbox_list = []
 g_data_json = []
 g_language = None
 
+# Toast 显示时长（秒）
+TOAST_DURATION = 3
+
 
 # 语言配置字典,支持中英文界面切换
 SUBFIX_LANG_CONFIG_MAP = {
@@ -331,7 +334,7 @@ def b_load_file():
 
 
 def b_open_in_editor():
-    """在默认编辑器中打开当前文件"""
+    """在默认编辑器中打开当前文件（使用 toast 通知反馈）"""
     try:
         if platform.system() == "Darwin":  # macOS
             subprocess.run(["open", g_load_file])
@@ -339,14 +342,17 @@ def b_open_in_editor():
             subprocess.run(["start", g_load_file], shell=True)
         else:  # Linux
             subprocess.run(["xdg-open", g_load_file])
-        
-        return f"文件已在编辑器中打开: {g_load_file}"
+        # 成功提示（使用全局时长）
+        gr.Info(f"文件已在编辑器中打开: {g_load_file}", duration=TOAST_DURATION)
+        return
     except Exception as e:
-        return f"打开编辑器失败: {e}"
+        # 失败提示（使用全局时长）
+        gr.Error(f"打开编辑器失败: {e}", duration=TOAST_DURATION)
+        return
 
 
 def b_reload_file():
-    """重新加载文件并刷新界面"""
+    """重新加载文件并刷新界面（使用 toast 通知反馈）"""
     global g_index, g_max_json_index
     try:
         # 保存当前索引位置
@@ -364,11 +370,16 @@ def b_reload_file():
         # 返回更新后的界面状态
         index_update = gr.update(value=current_index, maximum=(g_max_json_index if g_max_json_index >= 0 else 0))
         page_updates = b_change_index(current_index)
-        
-        return f"文件重新加载成功，共 {len(g_data_json)} 条数据", index_update, *page_updates
+
+        # 成功提示（使用全局时长）
+        gr.Info(f"文件重新加载成功，共 {len(g_data_json)} 条数据", duration=TOAST_DURATION)
+        return index_update, *page_updates
         
     except Exception as e:
-        return f"重新加载文件失败: {e}", gr.update(), *b_change_index(g_index)
+        # 失败提示（使用全局时长），同时保持界面稳定
+        gr.Error(f"重新加载文件失败: {e}", duration=TOAST_DURATION)
+        safe_index_update = gr.update(value=g_index, maximum=(g_max_json_index if g_max_json_index >= 0 else 0))
+        return safe_index_update, *b_change_index(g_index)
 
 
 def set_global(load_file, batch, webui_language):
@@ -417,8 +428,7 @@ def subfix_startwebui(args):
                 btn_open_editor = gr.Button(g_language("Open in Editor"), variant="secondary")
                 btn_reload_file = gr.Button(g_language("Reload File"), variant="secondary")
 
-        # 添加状态显示区域
-        status_text = gr.Textbox(label="状态", interactive=False, visible=True)
+        # 使用 Gradio toast 通知，移除常驻状态显示
 
         with gr.Row():
             with gr.Column():
@@ -528,14 +538,13 @@ def subfix_startwebui(args):
         btn_open_editor.click(
             b_open_in_editor,
             inputs=[],
-            outputs=[status_text]
+            outputs=[]
         )
 
         btn_reload_file.click(
             b_reload_file,
             inputs=[],
             outputs=[
-                status_text,
                 index_slider,
                 *g_text_list,
                 *g_audio_list,
