@@ -14,6 +14,7 @@ with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
         vad_kwargs={"max_single_segment_time": 30000},
         punc_model=PUNC_MODEL,
         spk_model=SPK_MODEL,
+        # preset_spk_num=2,  # 直接指定说话人数量
         disable_update=True,
     )
 
