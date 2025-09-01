@@ -6,6 +6,7 @@ import subprocess
 import platform
 
 import librosa
+import csv
 import gradio as gr
 import numpy as np
 import soundfile
@@ -300,37 +301,73 @@ def b_merge_audio(interval_r, *checkbox_list):
 
 # 保存文件
 def b_save_file():
-    """保存数据到list格式文件"""
-    with open(g_load_file,'w', encoding="utf-8") as file:
-        for data in g_data_json:
-            wav_path = data["wav_path"]
-            text = data["text"]
-            # 使用简化格式：仅保存音频路径和文本内容
-            file.write(f"{wav_path}|{text}".strip()+'\n')
+    """保存数据到文件：根据扩展名选择写入 txt 或 csv"""
+    ext = os.path.splitext(g_load_file)[1].lower()
+    if ext == '.csv':
+        with open(g_load_file, 'w', encoding='utf-8', newline='') as f:
+            writer = csv.writer(f)
+            # 不写表头，保持两列：wav_path, text
+            for data in g_data_json:
+                writer.writerow([data.get("wav_path", ""), data.get("text", "")])
+    else:
+        with open(g_load_file, 'w', encoding='utf-8') as file:
+            for data in g_data_json:
+                wav_path = data.get("wav_path", "")
+                text = data.get("text", "")
+                # 使用简化格式：仅保存音频路径和文本内容
+                file.write(f"{wav_path}|{text}".strip()+'\n')
 
 
 # 加载文件
 def b_load_file():
-    """从list格式文件加载数据"""
+    """从文件加载数据：支持 txt(list) 与 csv 两种格式"""
     global g_data_json, g_max_json_index
     g_data_json = []
-    with open(g_load_file, 'r', encoding="utf-8") as source:
-        data_list = source.readlines()
-        for _ in data_list:
-            data = _.split('|')
-            if len(data) == 2:
-                # 简化格式：音频路径|文本内容
-                wav_path, text = data
-                audio_id = os.path.splitext(os.path.basename(wav_path))[0]  # 从路径提取ID
+    ext = os.path.splitext(g_load_file)[1].lower()
+    
+    if ext == '.csv':
+        with open(g_load_file, 'r', encoding='utf-8', newline='') as source:
+            reader = csv.reader(source)
+            first = True
+            for row in reader:
+                if not row:
+                    continue
+                # 兼容可能存在的表头
+                if first and len(row) >= 2 and row[0].strip().lower() == 'wav_path' and row[1].strip().lower() == 'text':
+                    first = False
+                    continue
+                first = False
+                wav_path = (row[0] if len(row) >= 1 else '').strip()
+                text = (row[1] if len(row) >= 2 else '').strip()
+                if not wav_path:
+                    continue
+                audio_id = os.path.splitext(os.path.basename(wav_path))[0]
                 g_data_json.append({
                     'wav_path': wav_path,
-                    'speaker_name': audio_id,  # 内部结构使用
-                    'language': 'AUTO',  # 默认语言标识
-                    'text': text.strip()
+                    'speaker_name': audio_id,
+                    'language': 'AUTO',
+                    'text': text
                 })
-            else:
-                print(f"错误行格式 (期望2个字段): {data}")
-        g_max_json_index = len(g_data_json) - 1
+    else:
+        with open(g_load_file, 'r', encoding='utf-8') as source:
+            for line in source:
+                s = line.strip()
+                if not s:
+                    continue
+                parts = s.split('|', 1)
+                if len(parts) == 2:
+                    wav_path, text = parts[0], parts[1]
+                    audio_id = os.path.splitext(os.path.basename(wav_path))[0]
+                    g_data_json.append({
+                        'wav_path': wav_path,
+                        'speaker_name': audio_id,
+                        'language': 'AUTO',
+                        'text': text.strip()
+                    })
+                else:
+                    print(f"错误行格式 (期望2个字段): {parts}")
+
+    g_max_json_index = len(g_data_json) - 1
 
 
 def b_open_in_editor():
