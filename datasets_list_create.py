@@ -1,4 +1,5 @@
 import os
+import csv
 import argparse
 import subprocess
 import shutil
@@ -334,9 +335,22 @@ def create_list(source_dir: str, target_dir: str, cache_dir: str, sample_rate: i
         print("保存结果...")
         os.makedirs(os.path.dirname(output_list) if os.path.dirname(output_list) else '.', exist_ok=True)
         
-        with open(output_list, "w", encoding="utf-8") as file:
-            for line in result:
-                file.write(line.strip() + '\n')
+        # 根据输出文件后缀选择写入格式：.csv -> CSV 两列；否则写入为 txt 按 | 分隔
+        if str(output_list).lower().endswith('.csv'):
+            with open(output_list, "w", encoding="utf-8", newline='') as f:
+                writer = csv.writer(f)
+                # 如需表头可启用下一行：
+                # writer.writerow(["wav_path", "text"]) 
+                for line in result:
+                    # 兼容容错：若行中无分隔符，则将整行作为路径，文本置空
+                    parts = (line.strip()).split('|', 1)
+                    wav_path = parts[0].strip() if len(parts) >= 1 else ''
+                    text = parts[1].strip() if len(parts) == 2 else ''
+                    writer.writerow([wav_path, text])
+        else:
+            with open(output_list, "w", encoding="utf-8") as file:
+                for line in result:
+                    file.write(line.strip() + '\n')
         
         print(f"完成! 生成 {len(result)} 条训练数据")
         print(f"输出文件: {output_list}")
