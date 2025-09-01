@@ -509,8 +509,6 @@ def subfix_startwebui(args):
                 btn_open_editor = gr.Button(g_language("Open in Editor"), variant="secondary")
                 btn_reload_file = gr.Button(g_language("Reload File"), variant="secondary")
 
-        # 使用 Gradio toast 通知，移除常驻状态显示
-
         with gr.Row():
             with gr.Column():
                 delete_btns = []
@@ -559,7 +557,6 @@ def subfix_startwebui(args):
                 *g_checkbox_list
             ],
         )
-
         
         btn_previous_index.click(
             b_previous_index,
@@ -582,8 +579,6 @@ def subfix_startwebui(args):
                 *g_checkbox_list
             ],
         )
-
-        # 全局删除按钮已移除，改为每行单独删除
 
         btn_merge_audio.click(
             b_merge_audio,
@@ -612,9 +607,6 @@ def subfix_startwebui(args):
                 *g_checkbox_list
             ]
         )
-
-        
-
 
         btn_open_editor.click(
             b_open_in_editor,
