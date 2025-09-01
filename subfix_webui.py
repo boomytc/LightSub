@@ -7,6 +7,7 @@ import platform
 
 import librosa
 import csv
+import json
 import gradio as gr
 import numpy as np
 import soundfile
@@ -106,6 +107,10 @@ def b_change_index(index):
     """
     global g_index, g_batch
     g_index = index
+    try:
+        save_index_json()
+    except Exception as _:
+        pass
     datas = reload_data(index, g_batch)
     output = []
     # 文本框：使用gr.update设置标签/值
@@ -370,6 +375,43 @@ def b_load_file():
     g_max_json_index = len(g_data_json) - 1
 
 
+def get_index_json_path():
+    try:
+        base_dir = os.path.dirname(g_load_file)
+        return os.path.join(base_dir if base_dir else '.', 'index.json')
+    except Exception:
+        return 'index.json'
+
+
+def save_index_json():
+    path = get_index_json_path()
+    state = {"index": int(max(0, g_index))}
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(state, f, ensure_ascii=False)
+
+
+def load_index_json():
+    global g_index
+    path = get_index_json_path()
+    try:
+        if not os.path.exists(path):
+            # 不存在则创建默认索引文件
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump({"index": 0}, f, ensure_ascii=False)
+            g_index = 0
+            return
+        with open(path, 'r', encoding='utf-8') as f:
+            state = json.load(f)
+        idx = int(state.get('index', 0))
+        if g_max_json_index is not None and g_max_json_index >= 0:
+            idx = max(0, min(idx, g_max_json_index))
+        else:
+            idx = 0
+        g_index = idx
+    except Exception as e:
+        print(f"加载索引状态失败: {e}")
+
+
 def b_open_in_editor():
     """在默认编辑器中打开当前文件（使用 toast 通知反馈）"""
     try:
@@ -433,6 +475,8 @@ def set_global(load_file, batch, webui_language):
     g_language = SUBFIX_TextLanguage(webui_language)
 
     b_load_file()
+    # 加载上次浏览进度（索引），目录级 index.json
+    load_index_json()
 
 
 # WebUI主函数
