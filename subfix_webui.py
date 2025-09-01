@@ -311,7 +311,8 @@ def b_save_file():
     if ext == '.csv':
         with open(g_load_file, 'w', encoding='utf-8', newline='') as f:
             writer = csv.writer(f)
-            # 不写表头，保持两列：wav_path, text
+            # 写表头，标准两列：wav_path, text
+            writer.writerow(["wav_path", "text"])
             for data in g_data_json:
                 writer.writerow([data.get("wav_path", ""), data.get("text", "")])
     else:
@@ -471,7 +472,7 @@ def set_global(load_file, batch, webui_language):
     global g_load_file, g_batch, g_language
 
     g_batch = int(batch)
-    g_load_file = load_file if load_file != "None" else "dataset/audio_list/list.txt"
+    g_load_file = load_file if load_file != "None" else "dataset/audio_list/list.csv"
     g_language = SUBFIX_TextLanguage(webui_language)
 
     b_load_file()
@@ -663,7 +664,7 @@ def subfix_startwebui(args):
 
 if __name__ == "__main__":
     parser_subfix_webui = argparse.ArgumentParser(description='SubFix WebUI - 专用于datasets_list_create.py生成的数据文件')
-    parser_subfix_webui.add_argument('--load_file', required=True, help='加载的list文件路径，格式: audio_path|text')
+    parser_subfix_webui.add_argument('--load_file', required=True, help='加载的列表文件路径，推荐 CSV (wav_path,text，带表头); 兼容旧版 txt')
     parser_subfix_webui.add_argument('--g_batch', default=8, help='每页显示的音频数量, 默认: 8')
     parser_subfix_webui.add_argument('--webui_language', default="zh", type=str, help='界面语言: zh 或 en, 默认: zh')
     parser_subfix_webui.add_argument('--server_port', default=7860, type=int, help='WebUI端口, 默认: 7860')

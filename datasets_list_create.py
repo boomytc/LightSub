@@ -15,8 +15,10 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 使用FunASR创建语音训练数据集
 
 数据格式说明：
-输出格式：音频路径|文本内容
-示例：/path/to/audio_000001.wav|这是识别出的文本内容
+输出格式：CSV，列为 wav_path,text（带表头）
+示例：
+wav_path,text
+/path/to/audio_000001.wav,这是识别出的文本内容
 
 设计理念：
 - 统一中英混读识别，无需指定语言
@@ -27,7 +29,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 # I/O 路径默认值
 DEFAULT_SOURCE_DIR: Optional[str] = None
 DEFAULT_TARGET_DIR: Optional[str] = "dataset/audio_split"
-DEFAULT_OUTPUT_FILE: Optional[str] = "dataset/audio_list/list.txt"
+DEFAULT_OUTPUT_FILE: Optional[str] = "dataset/audio_list/list.csv"
 
 # 处理参数
 DEFAULT_CACHE_DIR: str = "cache"
@@ -334,23 +336,15 @@ def create_list(source_dir: str, target_dir: str, cache_dir: str, sample_rate: i
         
         print("保存结果...")
         os.makedirs(os.path.dirname(output_list) if os.path.dirname(output_list) else '.', exist_ok=True)
-        
-        # 根据输出文件后缀选择写入格式：.csv -> CSV 两列；否则写入为 txt 按 | 分隔
-        if str(output_list).lower().endswith('.csv'):
-            with open(output_list, "w", encoding="utf-8", newline='') as f:
-                writer = csv.writer(f)
-                # 如需表头可启用下一行：
-                # writer.writerow(["wav_path", "text"]) 
-                for line in result:
-                    # 兼容容错：若行中无分隔符，则将整行作为路径，文本置空
-                    parts = (line.strip()).split('|', 1)
-                    wav_path = parts[0].strip() if len(parts) >= 1 else ''
-                    text = parts[1].strip() if len(parts) == 2 else ''
-                    writer.writerow([wav_path, text])
-        else:
-            with open(output_list, "w", encoding="utf-8") as file:
-                for line in result:
-                    file.write(line.strip() + '\n')
+        # 仅生成 CSV（带表头）
+        with open(output_list, "w", encoding="utf-8", newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(["wav_path", "text"])  # 表头
+            for line in result:
+                parts = (line.strip()).split('|', 1)
+                wav_path = parts[0].strip() if len(parts) >= 1 else ''
+                text = parts[1].strip() if len(parts) == 2 else ''
+                writer.writerow([wav_path, text])
         
         print(f"完成! 生成 {len(result)} 条训练数据")
         print(f"输出文件: {output_list}")
