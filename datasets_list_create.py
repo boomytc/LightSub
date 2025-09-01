@@ -12,10 +12,9 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
  
 
 """
-使用FunASR创建语音训练数据集
+使用 FunASR 创建语音训练数据集。
 
-数据格式说明：
-输出格式：CSV，列为 wav_path,text（带表头）
+数据格式：CSV（带表头），列为：wav_path,text
 示例：
 wav_path,text
 /path/to/audio_000001.wav,这是识别出的文本内容
@@ -249,7 +248,7 @@ def recognize_with_internal_timestamps(
     asr_model: FunASRProcessor,
     absolute_path: bool,
 ) -> List[str]:
-    """单阶段：直接用组合模型拿句级时间戳并切片识别，返回 list.txt 行列表"""
+    """单阶段：直接用组合模型拿句级时间戳并切片识别，返回结果行列表（后续写入 CSV）。"""
     results: List[str] = []
     for audio_path in tqdm(converted_files, desc="内部VAD时间戳切片+识别"):
         try:
@@ -414,6 +413,11 @@ def main():
     print(f"源目录: {source_dir}")
     print(f"目标目录: {target_dir}")
     print(f"输出文件: {output_file}")
+    
+    # 仅允许 .csv 后缀输出，避免误用其他后缀
+    if not str(output_file).lower().endswith('.csv'):
+        print("错误: 输出文件必须以 .csv 结尾。请重新指定 --output 路径。")
+        return 1
     
     try:
         create_list(

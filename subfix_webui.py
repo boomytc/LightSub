@@ -468,6 +468,10 @@ def set_global(load_file, batch, webui_language):
     g_load_file = load_file if load_file != "None" else "dataset/audio_list/list.csv"
     g_language = SUBFIX_TextLanguage(webui_language)
 
+    # 仅允许 CSV 列表文件
+    if not str(g_load_file).lower().endswith('.csv'):
+        raise ValueError("仅支持 CSV 列表文件（.csv）。请重新指定 --load_file 路径。")
+
     b_load_file()
     # 加载上次浏览进度（索引），目录级 index.json
     load_index_json()
