@@ -326,54 +326,47 @@ def b_save_file():
 
 # 加载文件
 def b_load_file():
-    """从文件加载数据：支持 txt(list) 与 csv 两种格式"""
+    """从 CSV 文件加载数据（仅支持 CSV，强制要求表头包含 wav_path,text）。"""
     global g_data_json, g_max_json_index
     g_data_json = []
-    ext = os.path.splitext(g_load_file)[1].lower()
-    
-    if ext == '.csv':
-        with open(g_load_file, 'r', encoding='utf-8', newline='') as source:
-            reader = csv.reader(source)
-            first = True
-            for row in reader:
-                if not row:
-                    continue
-                # 兼容可能存在的表头
-                if first and len(row) >= 2 and row[0].strip().lower() == 'wav_path' and row[1].strip().lower() == 'text':
-                    first = False
-                    continue
-                first = False
-                wav_path = (row[0] if len(row) >= 1 else '').strip()
-                text = (row[1] if len(row) >= 2 else '').strip()
-                if not wav_path:
-                    continue
-                audio_id = os.path.splitext(os.path.basename(wav_path))[0]
-                g_data_json.append({
-                    'wav_path': wav_path,
-                    'speaker_name': audio_id,
-                    'language': 'AUTO',
-                    'text': text
-                })
-    else:
-        with open(g_load_file, 'r', encoding='utf-8') as source:
-            for line in source:
-                s = line.strip()
-                if not s:
-                    continue
-                parts = s.split('|', 1)
-                if len(parts) == 2:
-                    wav_path, text = parts[0], parts[1]
-                    audio_id = os.path.splitext(os.path.basename(wav_path))[0]
-                    g_data_json.append({
-                        'wav_path': wav_path,
-                        'speaker_name': audio_id,
-                        'language': 'AUTO',
-                        'text': text.strip()
-                    })
-                else:
-                    print(f"错误行格式 (期望2个字段): {parts}")
+    # 仅按 CSV 读取
+    with open(g_load_file, 'r', encoding='utf-8', newline='') as source:
+        reader = csv.reader(source)
+        header = None
+        wav_idx = text_idx = None
+        # 读取首个非空行作为表头
+        for row in reader:
+            if not row or all(not str(c).strip() for c in row):
+                continue
+            header = [str(c).strip().lower() for c in row]
+            break
 
-    g_max_json_index = len(g_data_json) - 1
+        if not header or ('wav_path' not in header) or ('text' not in header):
+            print("错误: CSV 缺少必需表头列 'wav_path' 或 'text'")
+            g_data_json = []
+            g_max_json_index = 0
+            return
+
+        wav_idx = header.index('wav_path')
+        text_idx = header.index('text')
+
+        # 继续读取数据行
+        for row in reader:
+            if not row:
+                continue
+            wav_path = (row[wav_idx] if len(row) > wav_idx else '').strip()
+            text = (row[text_idx] if len(row) > text_idx else '').strip()
+            if not wav_path:
+                continue
+            audio_id = os.path.splitext(os.path.basename(wav_path))[0]
+            g_data_json.append({
+                'wav_path': wav_path,
+                'speaker_name': audio_id,
+                'language': 'AUTO',
+                'text': text
+            })
+
+    g_max_json_index = max(len(g_data_json) - 1, 0)
 
 
 def get_index_json_path():
@@ -664,7 +657,7 @@ def subfix_startwebui(args):
 
 if __name__ == "__main__":
     parser_subfix_webui = argparse.ArgumentParser(description='SubFix WebUI - 专用于datasets_list_create.py生成的数据文件')
-    parser_subfix_webui.add_argument('--load_file', required=True, help='加载的列表文件路径，推荐 CSV (wav_path,text，带表头); 兼容旧版 txt')
+    parser_subfix_webui.add_argument('--load_file', required=True, help='加载的列表文件路径，仅支持 CSV（必须包含表头: wav_path,text）')
     parser_subfix_webui.add_argument('--g_batch', default=8, help='每页显示的音频数量, 默认: 8')
     parser_subfix_webui.add_argument('--webui_language', default="zh", type=str, help='界面语言: zh 或 en, 默认: zh')
     parser_subfix_webui.add_argument('--server_port', default=7860, type=int, help='WebUI端口, 默认: 7860')
