@@ -6,7 +6,7 @@ from typing import List
 
 """简洁 CSV WebUI（两列：wav_path, text）
 - 启动参数指定 CSV，页面即加载
-- 表格编辑；筛选与替换仅作用于 text（不区分大小写）
+- 表格编辑；筛选仅作用于 text（不区分大小写），替换仅作用于 text（区分大小写）
 - 点击“保存”写回 CSV（首行写入表头 wav_path,text）
 """
 
@@ -16,6 +16,7 @@ g_rows_all: List[List[str]] = []          # 全量数据（二维：[[wav_path, 
 g_view_map: List[int] = []                # 视图 -> 全量 索引映射
 g_filter_desc: str = ""                  # 当前筛选描述
 HEADERS = ["wav_path", "text"]
+N_COLS = len(HEADERS)
 
 
 def _normalize_row(row: List[str], n_cols: int) -> List[str]:
@@ -29,7 +30,7 @@ def _normalize_row(row: List[str], n_cols: int) -> List[str]:
 
 def _apply_view_rows_to_all(view_rows: List[List[str]]):
     global g_rows_all, g_view_map
-    n_cols = 2
+    n_cols = N_COLS
     for i, vr in enumerate(view_rows or []):
         if i >= len(g_view_map):
             break
@@ -70,7 +71,7 @@ def _dataframe_update() -> gr.update:
     subtitle = f"共 {len(g_rows_all)} 行；当前视图 {len(view_rows)} 行"
     if g_filter_desc:
         subtitle += f"（{g_filter_desc}）"
-    n_cols = 2
+    n_cols = N_COLS
     return gr.update(
         headers=HEADERS,
         value=view_rows,
@@ -86,26 +87,28 @@ def _load_csv(path: str) -> List[List[str]]:
     rows: List[List[str]] = []
     with open(path, 'r', encoding='utf-8', newline='') as f:
         reader = csv.reader(f)
-        raw_rows: List[List[str]] = []
-        for row in reader:
-            raw_rows.append([str(c) for c in row])
 
-    # 跳过表头: wav_path,text（忽略大小写与 BOM）
-    def _is_header(r: List[str]) -> bool:
-        if not r:
-            return False
-        c0 = (r[0] or "").strip().lower().lstrip("\ufeff")
-        c1 = (r[1] if len(r) > 1 else "").strip().lower()
-        return c0 == "wav_path" and c1 == "text"
+        # 读取首行用于判断是否为表头（忽略大小写与 BOM）
+        def _is_header(r: List[str]) -> bool:
+            if not r:
+                return False
+            c0 = (r[0] or "").strip().lower().lstrip("\ufeff")
+            c1 = (r[1] if len(r) > 1 else "").strip().lower()
+            return c0 == "wav_path" and c1 == "text"
 
-    data_rows = raw_rows[1:] if (raw_rows and _is_header(raw_rows[0])) else raw_rows
+        first = next(reader, None)
+        # 如果首行为表头，则跳过；否则将其当作数据行处理
+        if first is not None and not _is_header([str(c) for c in first]):
+            wav = str(first[0]) if len(first) >= 1 else ""
+            txt = str(first[1]) if len(first) >= 2 else ""
+            rows.append([wav, txt])
 
-    # 仅保留两列
-    rows: List[List[str]] = []
-    for r in data_rows:
-        wav = r[0] if len(r) >= 1 else ""
-        txt = r[1] if len(r) >= 2 else ""
-        rows.append([wav, txt])
+        # 继续处理剩余行
+        for r in reader:
+            r = [str(c) for c in r]
+            wav = r[0] if len(r) >= 1 else ""
+            txt = r[1] if len(r) >= 2 else ""
+            rows.append([wav, txt])
     return rows
 
 
@@ -120,7 +123,7 @@ def _save_csv(path: str):
         writer.writerow(HEADERS)
         # 写数据行（两列）
         for r in g_rows_all:
-            writer.writerow(_normalize_row(r, 2))
+            writer.writerow(_normalize_row(r, N_COLS))
 
 
 def ui_save(df_value: List[List[str]]):
@@ -151,12 +154,9 @@ def ui_filter(df_value: List[List[str]], query: str):
 
     new_map: List[int] = []
     for i, row in enumerate(g_rows_all):
-        try:
-            text_cell = row[1] if len(row) > 1 else ""
-            if _match(text_cell):
-                new_map.append(i)
-        except Exception:
-            continue
+        text_cell = row[1] if len(row) > 1 else ""
+        if _match(text_cell):
+            new_map.append(i)
     g_view_map = new_map
     g_filter_desc = f"筛选: text 包含 '{q}'，匹配 {len(new_map)} 行"
     return _dataframe_update()
@@ -180,16 +180,14 @@ def ui_replace(df_value: List[List[str]], find: str, repl: str):
         gr.Warning("查找内容为空，不执行替换")
         return _dataframe_update()
 
-    indices = list(range(len(g_rows_all)))
-
     count = 0
-    for i in indices:
+    for i in range(len(g_rows_all)):
         if not (0 <= i < len(g_rows_all)):
             continue
         row = g_rows_all[i]
         # 仅替换 text 列
-        if len(row) < 2:
-            row.extend([""] * (2 - len(row)))
+        if len(row) < N_COLS:
+            row.extend([""] * (N_COLS - len(row)))
         cell = str(row[1])
         if find in cell:
             count += cell.count(find)
@@ -218,7 +216,7 @@ def launch(port: int = 7861):
             headers=HEADERS,
             value=[],
             row_count=(0, "dynamic"),
-            col_count=2,
+            col_count=N_COLS,
             interactive=True,
             label="未加载",
         )
@@ -239,11 +237,8 @@ def launch(port: int = 7861):
         btn_clear_replace.click(ui_clear_replace_fields, inputs=[], outputs=[tb_query, tb_find, tb_repl])
 
 
-        # 初次加载时，根据已加载的 CSV 初始化表格
-        def ui_init():
-            return _dataframe_update()
-
-        demo.load(ui_init, inputs=[], outputs=[df])
+        # 初次加载：根据已加载的 CSV 初始化表格
+        demo.load(_dataframe_update, inputs=[], outputs=[df])
 
     demo.launch(server_port=port)
 
