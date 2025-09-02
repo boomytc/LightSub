@@ -17,6 +17,7 @@ g_view_map: List[int] = []                # 视图 -> 全量 索引映射
 g_filter_desc: str = ""                  # 当前筛选描述
 HEADERS = ["wav_path", "text"]
 N_COLS = len(HEADERS)
+TOAST_DURATION = 3
 
 
 def _normalize_row(row: List[str], n_cols: int) -> List[str]:
@@ -132,9 +133,9 @@ def ui_save(df_value: List[List[str]]):
     try:
         _apply_view_rows_to_all(_to_rows(df_value))
         _save_csv(g_csv_path)
-        gr.Info(f"已保存至: {g_csv_path}")
+        gr.Info(f"已保存至: {g_csv_path}", duration=TOAST_DURATION)
     except Exception as e:
-        gr.Error(f"保存失败: {e}")
+        gr.Error(f"保存失败: {e}", duration=TOAST_DURATION)
 
 
 def ui_filter(df_value: List[List[str]], query: str):
@@ -177,7 +178,7 @@ def ui_replace(df_value: List[List[str]], find: str, repl: str):
     find = str(find or "")
     repl = str(repl or "")
     if find == "":
-        gr.Warning("查找内容为空，不执行替换")
+        gr.Warning("查找内容为空，不执行替换", duration=TOAST_DURATION)
         return _dataframe_update()
 
     count = 0
@@ -192,7 +193,7 @@ def ui_replace(df_value: List[List[str]], find: str, repl: str):
         if find in cell:
             count += cell.count(find)
             row[1] = cell.replace(find, repl)
-    gr.Info(f"替换完成：共替换 {count} 处")
+    gr.Info(f"替换完成：共替换 {count} 处", duration=TOAST_DURATION)
     return _dataframe_update()
 
 def launch(port: int = 7861):
