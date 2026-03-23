@@ -1,4 +1,0 @@
-torch
-torchaudio
-funasr==1.2.6
-gradio

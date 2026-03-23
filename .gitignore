@@ -1,6 +1,12 @@
+# 系统相关
 .DS_Store
+
+# 编译相关
 __pycache__
-models
-.github
+uv.lock
+
+# 数据相关
 dataset
+
+# Agentic Engineering
 AGENT.md
