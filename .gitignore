@@ -4,9 +4,14 @@
 # 编译相关
 __pycache__
 uv.lock
+*.egg-info/
 
-# 数据相关
+# 本地运行产物
+.venv/
 dataset
+models
+cache
+index.json
 
 # Agentic Engineering
 AGENT.md

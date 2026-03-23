@@ -1,8 +1,10 @@
 from funasr import AutoModel
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+from pathlib import Path
 
 model_dir = "models/asr_models/sensevoice"
+demo_audio = Path(__file__).resolve().parent / "examples" / "manual171_0113.wav"
 
 generate_kwargs = {
     "language": "auto",  # "zh", "en", "yue", "ja", "ko", "nospeech"
@@ -17,12 +19,12 @@ en_input = f"{model_dir}/example/en.mp3"
 # zh
 zh_input = f"{model_dir}/example/zh.mp3"
 
-input_wav = "demo/examples/manual171_0113.wav"
+input_wav = str(demo_audio)
 
 input_dic = {
     "en": en_input,
     "zh": zh_input,
-    "zh": input_wav,
+    "manual": input_wav,
 }
 
 with redirect_stderr(StringIO()), redirect_stdout(StringIO()):

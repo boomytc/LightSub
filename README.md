@@ -44,6 +44,16 @@ source .venv/bin/activate
 
 ## 使用方法
 
+### 项目结构
+
+- `lightsub_webui.py`：主 WebUI 入口。
+- `datasets_list_create.py`：音频切分与识别入口。
+- `webui/`：WebUI 内部模块，包含切分修正和表格编辑界面逻辑。
+- `scripts/demo/`：FunASR 示例脚本与示例音频。
+- `scripts/tools/`：辅助转换脚本。
+- `finetune/`：微调数据准备脚本。
+- `dataset/`、`models/`：本地运行数据与模型目录。
+
 ### 1. 提取与切分音频（生成数据集）
 
 将包含原始音频文件（支持 `wav`, `mp3`, `flac`, `m4a`, `aac`）的目录作为参数传入脚本，自动进行 VAD 切片和语音识别：
@@ -74,3 +84,13 @@ uv run lightsub_webui.py --load_file dataset/audio_list/list.csv
 
 - **切分与修正 (SubFix Tab)**：可逐条试听切分后的音频，核对、修改对应文本，并支持调整音频合并间隔、按秒重新切分音频或删除不需要的音频片段。
 - **编辑 (Edit Tab)**：提供全局的数据表格视图，支持关键字筛选、全局查找替换以及数据保存。
+
+### 3. 运行示例与辅助脚本
+
+```bash
+# FunASR 示例
+uv run scripts/demo/demo_paraformer.py
+
+# 列表格式转换
+uv run scripts/tools/txt2csv.py dataset/audio_list/list.txt
+```

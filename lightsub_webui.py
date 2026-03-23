@@ -1,9 +1,9 @@
 import argparse
 import gradio as gr
 
-# 复用现有模块逻辑（不改动原文件）
-import subfix_webui as sf
-import dataEdit_webui as de
+# 复用 WebUI 子模块逻辑
+from webui import data_edit as de
+from webui import subfix as sf
 
 
 def _patch_gr_toast_duration(duration: float):

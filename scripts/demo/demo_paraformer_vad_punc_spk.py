@@ -1,11 +1,13 @@
 from funasr import AutoModel
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+from pathlib import Path
 
 PARAFORMER_MODEL="models/asr_models/paraformer"
 VAD_MODEL="models/vad_models/fsmn_vad"
 PUNC_MODEL="models/punc_models/punc_ct"
 SPK_MODEL="models/spk_models/campplus_sv"
+DEMO_AUDIO = Path(__file__).resolve().parent / "examples" / "manual171_0113.wav"
 
 with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
     model = AutoModel(
@@ -20,7 +22,7 @@ with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
 
 with redirect_stderr(StringIO()), redirect_stdout(StringIO()):
     res = model.generate(
-        input = "demo/examples/manual171_0113.wav",
+        input = str(DEMO_AUDIO),
         cache={},
     )
 
