@@ -49,7 +49,11 @@ source .venv/bin/activate
 将包含原始音频文件（支持 `wav`, `mp3`, `flac`, `m4a`, `aac`）的目录作为参数传入脚本，自动进行 VAD 切片和语音识别：
 
 ```bash
+# 如果已激活虚拟环境，可直接使用 python
 python datasets_list_create.py /path/to/your/audio_dir
+
+# 或者使用 uv run（无需手动激活环境，现代化推荐做法）
+uv run datasets_list_create.py /path/to/your/audio_dir
 ```
 
 > **注意**：脚本依赖 `ffmpeg` 进行音频处理，请确保系统已安装 `ffmpeg` 并添加至环境变量。执行完成后，默认会在 `dataset/audio_list/list.csv` 生成数据列表，切分好的音频会存放在 `dataset/audio_split` 目录中。
@@ -59,7 +63,11 @@ python datasets_list_create.py /path/to/your/audio_dir
 使用上一步生成的 `list.csv` 启动 WebUI：
 
 ```bash
+# 如果已激活虚拟环境
 python lightsub_webui.py --load_file dataset/audio_list/list.csv
+
+# 或者使用 uv run
+uv run lightsub_webui.py --load_file dataset/audio_list/list.csv
 ```
 
 启动后，在浏览器中打开控制台输出的本地地址（默认为 `http://127.0.0.1:7860`），您将看到以下功能面板：
